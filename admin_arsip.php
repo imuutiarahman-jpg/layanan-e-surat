@@ -141,18 +141,24 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
             <table>
                 <tr>
                     <th>User & Info</th>
-                    <th>Layanan</th>
+                    <th>No. Surat</th>
+                    <th>Jenis Surat</th>
                     <th>Tgl Selesai/Kirim</th>
                     <th>Status</th>
                     <th>Hasil Akhir</th>
                     <th>Aksi</th>
                 </tr>
-                <?php while($row = mysqli_fetch_assoc($query)) { ?>
+                <?php while($row = mysqli_fetch_assoc($query)) { 
+                    $vars = json_decode($row['data_surat'], true);
+                    $nomor_full = isset($vars['nomor_surat']) ? $vars['nomor_surat'] : '-';
+                    $nomor_surat = explode('/', $nomor_full)[0];
+                ?>
                 <tr>
                     <td>
                         <b><?= htmlspecialchars($row['nama_lengkap']); ?></b><br>
                         <small style="color:#718096"><?= $row['prodi'] ? htmlspecialchars($row['prodi']) : ucfirst($row['role']); ?></small>
                     </td>
+                    <td><?= htmlspecialchars($nomor_surat); ?></td>
                     <td><?= htmlspecialchars($row['jenis_surat']); ?></td>
                     <td><?= htmlspecialchars($row['tgl_pengajuan']); ?></td>
                     <td>

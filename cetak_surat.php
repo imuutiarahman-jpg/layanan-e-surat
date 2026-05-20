@@ -5,20 +5,12 @@ if (!isset($_SESSION['login'])) {
     exit;
 }
 
-$id = $_GET['id'];
-$query = mysqli_query($koneksi, "SELECT p.*, u.nama_lengkap, u.nomor_induk, u.prodi FROM permohonan_surat p JOIN users u ON p.user_id = u.id WHERE p.id = '$id'");
-$data = mysqli_fetch_assoc($query);
-
-if (isset($_POST['upload_replace']) && $_SESSION['role'] == 'admin') {
-    if (!empty($_FILES['replace_file']['name'])) {
-        $filename = "REPLACE_" . time() . "_" . str_replace(' ', '_', $_FILES['replace_file']['name']);
-        if (move_uploaded_file($_FILES['replace_file']['tmp_name'], 'uploads/' . $filename)) {
-            mysqli_query($koneksi, "UPDATE permohonan_surat SET surat_jadi = '$filename' WHERE id = '$id'");
-            echo "<script>alert('Berhasil! Surat otomatis telah diganti dengan file manual.'); window.location='admin_arsip.php';</script>";
-            exit;
-        }
-    }
-}
+$id = isset($_GET['id']) ? $_GET['id'] : '';
+$stmt = mysqli_prepare($koneksi, "SELECT p.*, u.nama_lengkap, u.nomor_induk, u.prodi FROM permohonan_surat p JOIN users u ON p.user_id = u.id WHERE p.id = ?");
+mysqli_stmt_bind_param($stmt, "i", $id);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$data = mysqli_fetch_assoc($result);
 
 if (!$data) {
     die("Data tidak ditemukan.");
@@ -83,32 +75,59 @@ if ($data['surat_jadi'] != 'SYSTEM_GENERATED') {
     }
 }
 
-// Ambil template yang sesuai
-$jenis = $data['jenis_surat'];
-$tmpl_query = mysqli_query($koneksi, "SELECT isi_template FROM templates WHERE jenis_surat = '$jenis'");
-$tmpl = mysqli_fetch_assoc($tmpl_query);
-
 $vars = [];
-$isi_surat = $tmpl ? $tmpl['isi_template'] : "Template belum diatur oleh admin untuk jenis ini.";
+$isi_surat = "Isi surat belum ditentukan."; // Default fallback
 
-// Proses penggantian variabel dinamis
-if (!empty($data['data_surat'])) {
-    $vars = json_decode($data['data_surat'], true);
-    foreach ($vars as $key => $val) {
-        $isi_surat = str_replace("[" . strtoupper($key) . "]", "<b>" . htmlspecialchars($val) . "</b>", $isi_surat);
+// Cek apakah ada Template Master RTF untuk jenis surat ini (Pendekatan 1)
+// Gunakan MD5 dari jenis surat agar nama file dinamis sesuai jenisnya
+$rtf_master_path = "rtf/" . md5($data['jenis_surat']) . ".rtf";
+$is_rtf_mode = file_exists($rtf_master_path);
+
+// LOGIKA UNDUH: Hanya dijalankan jika ada parameter ?download=rtf
+if (isset($_GET['download']) && $_GET['download'] == 'rtf' && $is_rtf_mode) {
+    if (!empty($data['data_surat'])) {
+        $vars = json_decode($data['data_surat'], true);
+        $rtf_content = file_get_contents($rtf_master_path);
+        foreach ($vars as $key => $val) {
+            $rtf_content = str_replace("%" . $key . "%", $val, $rtf_content);
+        }
+        header("Content-type: application/rtf");
+        header("Content-Disposition: attachment; filename=Surat_" . str_replace(' ', '_', $data['jenis_surat']) . ".rtf");
+        echo $rtf_content;
+        exit;
     }
 }
 
-// Tambahan placeholder khusus SK
-$isi_surat = str_replace("[NOMOR_SURAT]", "<b>" . ($vars['nomor_surat'] ?? '...') . "</b>", $isi_surat);
-$isi_surat = str_replace("[TA]", "<b>" . ($vars['ta'] ?? '...') . "</b>", $isi_surat);
-$isi_surat = str_replace("[PRODI]", "<b>" . strtoupper($data['prodi'] ?? 'Sistem Informasi') . "</b>", $isi_surat);
+// LOGIKA PRATINJAU: Menyiapkan variabel untuk tampilan HTML
+if (!empty($data['data_surat'])) {
+    $vars = json_decode($data['data_surat'], true);
 
-// Fallback placeholders standar
-$isi_surat = str_replace("[NAMA]", "<b>" . $data['nama_lengkap'] . "</b>", $isi_surat);
-$isi_surat = str_replace("[TANGGAL_TTD]", date('d F Y'), $isi_surat);
+    /* // Bagian ini dihapus agar tidak langsung download saat halaman dibuka
+        $rtf_content = file_get_contents($rtf_master_path);
+        foreach ($vars as $key => $val) {
+            // Ganti %nama%, %id_number%, %nomor_surat%, dll sesuai atribut database (JSON)
+            $rtf_content = str_replace("%" . $key . "%", $val, $rtf_content);
+        }
+        
+        // Kirim header untuk download file RTF (Rich Text Format)
+        header("Content-type: application/rtf");
+        header("Content-Disposition: attachment; filename=Surat_Selesai_" . time() . ".rtf");
+        echo $rtf_content;
+        exit;
+    */
 
-$is_sk = (strpos(strtolower($data['jenis_surat']), 'sk') !== false);
+    $main_content_key = (isset($vars['data'])) ? 'data' : ((isset($vars['judul'])) ? 'judul' : 'catatan');
+    if (isset($vars[$main_content_key])) $isi_surat = $vars[$main_content_key];
+
+    foreach ($vars as $key => $val) {
+        if ($key !== $main_content_key) {
+            $final_val = (strlen($val) < 100 && !str_contains($val, '<')) ? "<b>$val</b>" : $val;
+            // Gunakan format %variabel% agar sama dengan template RTF
+            $isi_surat = str_replace("%" . $key . "%", $final_val, $isi_surat);
+        }
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html>
@@ -161,17 +180,11 @@ $is_sk = (strpos(strtolower($data['jenis_surat']), 'sk') !== false);
 <body>
     <div class="no-print">
         <button onclick="window.print()" style="padding: 10px 20px; cursor:pointer;">Cetak Surat / Simpan PDF</button>
+        <?php if ($is_rtf_mode): ?>
+            <a href="cetak_surat.php?id=<?= $id ?>&download=rtf" style="padding: 10px 20px; text-decoration: none; background: #2ecc71; color: white; border-radius: 4px; font-size: 13px; font-family: sans-serif; display: inline-block; font-weight: bold;">Unduh File Word (.rtf)</a>
+        <?php endif; ?>
         <button onclick="window.close()" style="padding: 10px 20px; cursor:pointer;">Tutup</button>
     </div>
-    <?php if($_SESSION['role'] == 'admin'): ?>
-        <div class="no-print" style="background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; text-align: center;">
-            <form method="POST" enctype="multipart/form-data" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                <span style="font-size: 13px; font-weight: bold; color: #856404;">Ganti dengan File Manual (Word/PDF):</span>
-                <input type="file" name="replace_file" accept=".pdf,.doc,.docx" required>
-                <button type="submit" name="upload_replace" style="padding: 5px 15px; background: #856404; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Upload & Ganti</button>
-            </form>
-        </div>
-    <?php endif; ?>
     <div class="page">
     <div class="kop-surat">
         <h2 style="margin:0;">UNIVERSITAS MUHAMMADIYAH GORONTALO</h2>
@@ -180,24 +193,14 @@ $is_sk = (strpos(strtolower($data['jenis_surat']), 'sk') !== false);
     </div>
 
     <div class="content">
-        <?php if($is_sk): ?>
-            <p style="text-align: center; font-weight: bold; margin-bottom: 0;">SURAT KEPUTUSAN</p>
-            <p style="text-align: center; font-weight: bold; margin-top: 0;">DEKAN FAKULTAS SAINS DAN ILMU KOMPUTER <br> Nomor : <?= $vars['nomor_surat'] ?? '...'; ?></p>
-            <p style="text-align: center; font-weight: bold; margin-top: 20px;">TENTANG</p>
-            <p style="text-align: center; font-weight: bold;">TIM PENGUJI UJIAN SEMINAR PROPOSAL <br> PROGRAM STUDI <?= strtoupper($data['prodi'] ?? 'Sistem Informasi'); ?> <br> FAKULTAS SAINS DAN ILMU KOMPUTER UNIVERSITAS MUHAMMADIYAH GORONTALO <br> SEMESTER GENAP T.A <?= $vars['ta'] ?? '...'; ?></p>
-        <?php else: ?>
-        <p style="text-align: center; font-weight: bold; text-decoration: underline; font-size: 18px;">
-            SURAT KETERANGAN <?= strtoupper($data['jenis_surat']); ?>
-        </p>
-        <?php endif; ?>
-        
-        <div style="margin-top: 40px;">
+        <!-- Konten surat sepenuhnya diambil dari input Rich Text Editor Admin -->
+        <div style="margin-top: 20px;">
             <?= $isi_surat; ?>
         </div>
     </div>
 
     <div class="footer">
-        <p>Gorontalo, <?= isset($vars['tanggal_surat']) ? htmlspecialchars($vars['tanggal_surat']) : date('d F Y'); ?></p>
+        <p>Gorontalo, <?= date('d F Y'); ?></p>
         <p>Dekan,</p>
         <br><br><br><br>
         <p><b>Dr. Mohamad Ervandi, S.Pt., MP</b></p>
@@ -205,44 +208,6 @@ $is_sk = (strpos(strtolower($data['jenis_surat']), 'sk') !== false);
         <div style="font-size: 10px;">ID Validasi: <?= md5($data['id']); ?></div>
     </div>
     <div style="clear: both;"></div>
-
-    <?php if($is_sk): ?>
-        <div class="lampiran-page">
-            <p>Lampiran : Surat Keputusan Dekan Fakultas Sains dan Ilmu Komputer</p>
-            <p style="margin-top:-10px;">Nomor : <?= $vars['nomor_surat'] ?? '...'; ?></p>
-            <p style="margin-top:-10px;">Tanggal : <?= isset($vars['tanggal_surat']) ? htmlspecialchars($vars['tanggal_surat']) : date('d F Y'); ?></p>
-            <p style="margin-top:-10px;">Tentang : Penetapan Tim Penguji Ujian Seminar Proposal</p>
-            
-            <table class="table-lampiran">
-                <thead>
-                    <tr>
-                        <th>No.</th>
-                        <th>Nama/NIM</th>
-                        <th>Judul Seminar Proposal</th>
-                        <th>Pembimbing</th>
-                        <th>Penguji</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>1.</td>
-                        <td><?= $data['nama_lengkap']; ?> / <?= $data['nomor_induk']; ?></td>
-                        <td><?= $vars['judul'] ?? '-'; ?></td>
-                        <td>1. <?= $vars['p1'] ?? '-'; ?><br>2. <?= $vars['p2'] ?? '-'; ?></td>
-                        <td><?= $vars['penguji'] ?? '-'; ?></td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <div class="footer">
-                <p>Mengetahui,</p>
-                <p>Dekan,</p>
-                <br><br><br>
-                <p><b>Dr. Mohamad Ervandi, S.Pt., MP</b></p>
-                <p style="margin-top:-15px;">NBM : 1 2 3 2 6 9 0</p>
-            </div>
-        </div>
-    <?php endif; ?>
     </div>
 </body>
 </html>

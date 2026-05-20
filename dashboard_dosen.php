@@ -7,12 +7,17 @@ if (!isset($_SESSION['login']) || $_SESSION['role'] != 'dosen') {
 
 $user_id = $_SESSION['user_id'];
 
+// Ambil data profil dosen untuk pre-fill formulir
+ $u_query = mysqli_query($koneksi, "SELECT nama_lengkap, nomor_induk FROM users WHERE id = '$user_id'");
+ $u_data = mysqli_fetch_assoc($u_query);
+
 if (isset($_POST['ajukan'])) {
     $jenis_surat = $_POST['jenis_surat'];
     $catatan = $_POST['catatan_user'];
+    $data_surat = isset($_POST['var']) ? json_encode($_POST['var']) : null;
     
-    $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, catatan_user) VALUES (?, ?, ?)");
-    mysqli_stmt_bind_param($stmt, "iss", $user_id, $jenis_surat, $catatan);
+    $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, catatan_user, data_surat) VALUES (?, ?, ?, ?)");
+    mysqli_stmt_bind_param($stmt, "isss", $user_id, $jenis_surat, $catatan, $data_surat);
     mysqli_stmt_execute($stmt);
     echo "<script>alert('Permohonan berhasil dikirim!'); window.location='dashboard_dosen.php';</script>";
 }
@@ -53,6 +58,7 @@ $tampil = mysqli_stmt_get_result($stmt_tampil);
         .bg-selesai { background: #1cc88a; }
         .bg-ditolak { background: #e74a3b; }
         .btn-download { color: #6610f2; text-decoration: none; border: 1px solid #6610f2; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .dynamic-fields { background: #f0f2f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #6610f2; display: none; }
         .alert-notif { background: #e2d9f3; color: #4b0082; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #6610f2; font-size: 14px; }
     </style>
 </head>
@@ -65,11 +71,19 @@ $tampil = mysqli_stmt_get_result($stmt_tampil);
     <div class="container">
         <h2>Halo, Dr/Bpk/Ibu <?= htmlspecialchars($_SESSION['nama']); ?> 👋</h2>
 
-        <?php while($n = mysqli_fetch_assoc($notif_res)) { ?>
-            <div class="alert-notif">
-                <b>Pemberitahuan:</b> <?= htmlspecialchars($n['pesan']); ?>
-            </div>
-        <?php } ?>
+        <?php 
+        if ($notif_res && mysqli_num_rows($notif_res) > 0) {
+            $msgs = [];
+            while ($n = mysqli_fetch_assoc($notif_res)) {
+                $msgs[] = "- " . $n['pesan'];
+                $nid = $n['id'];
+                // Tandai sudah dibaca agar tidak muncul lagi saat refresh
+                mysqli_query($koneksi, "UPDATE notifikasi SET is_read = 1 WHERE id = $nid");
+            }
+            $msg_text = "PEMBERITAHUAN BARU:\n\n" . implode("\n", $msgs);
+            echo "<script>alert(" . json_encode($msg_text) . ");</script>";
+        }
+        ?>
 
         <div class="card">
             <h3>Formulir Administrasi Dosen</h3>

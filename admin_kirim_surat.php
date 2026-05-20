@@ -13,14 +13,7 @@ if (isset($_POST['kirim_surat'])) {
     $data_json = json_encode($variables);
     $id_permohonan = $_POST['id_permohonan'];
 
-    // Logika Unggah File Manual (Override Template Otomatis)
     $surat_final = 'SYSTEM_GENERATED';
-    if (!empty($_FILES['file_custom']['name'])) {
-        $filename = "MANUAL_" . time() . "_" . str_replace(' ', '_', $_FILES['file_custom']['name']);
-        if (move_uploaded_file($_FILES['file_custom']['tmp_name'], 'uploads/' . $filename)) {
-            $surat_final = $filename;
-        }
-    }
 
     if (!empty($id_permohonan)) {
         // Jika memproses permohonan yang sudah ada (UPDATE)
@@ -61,12 +54,28 @@ if ($users_res) {
     echo "<script>alert('Terjadi kesalahan saat mengambil data pengguna dari database. Pastikan kolom nomor_induk ada di tabel users. Error: " . mysqli_error($koneksi) . "'); window.location='dashboard_admin.php';</script>";
     exit;
 }
+
+// Ambil data permohonan jika ada ID untuk pre-fill field (Insightful addition)
+$existing_data = [];
+if (isset($_GET['id_permohonan'])) {
+    $id_perm = mysqli_real_escape_string($koneksi, $_GET['id_permohonan']);
+    $p_query = mysqli_query($koneksi, "SELECT data_surat FROM permohonan_surat WHERE id = '$id_perm'");
+    $p_res = mysqli_fetch_assoc($p_query);
+    if ($p_res && $p_res['data_surat']) {
+        $existing_data = json_decode($p_res['data_surat'], true);
+    }
+}
 ?>
 <!DOCTYPE html>
 <html>
 <head>
     <title>Kirim Surat Baru | Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <!-- Load jQuery dan Summernote untuk fitur Rich Text (RTF) -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+    
     <style>
         body { font-family: 'Inter', sans-serif; background: #f4f7f6; padding: 40px; }
         .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
@@ -82,9 +91,10 @@ if ($users_res) {
 <body>
     <div class="container">
         <a href="dashboard_admin.php" class="back-link">← Kembali ke Dashboard</a>
-        <h2>Buat & Kirim Surat / SK</h2>
+
+        <h2>Buat & Kirim Surat </h2>
         
-        <form method="POST" id="mainForm" enctype="multipart/form-data">
+        <form method="POST" id="mainForm">
             <input type="hidden" name="id_permohonan" value="<?= isset($_GET['id_permohonan']) ? $_GET['id_permohonan'] : ''; ?>">
             
             <!-- Langkah 1: Pilih Kategori -->
@@ -105,9 +115,9 @@ if ($users_res) {
                 </select>
             </div>
 
-            <!-- Langkah 3: Pilih Template -->
+            <!-- Langkah 3: Pilih Jenis Surat -->
             <div class="form-group">
-                <label>Pilih Jenis Template Surat</label>
+                <label>Pilih Jenis Surat</label>
                 <select name="jenis_surat" id="templateSelect" required onchange="showFields()" disabled>
                     <option value="">-- Pilih Penerima Terlebih Dahulu --</option>
                     <!-- Optgroups will be filtered by JS -->
@@ -136,18 +146,13 @@ if ($users_res) {
                 <div id="fieldsBody"></div>
             </div>
 
-            <div class="form-group" style="margin-top: 25px; padding: 20px; border: 2px dashed #3498db; border-radius: 10px; background: #f0f8ff;">
-                <label style="color: #2980b9;">Opsi: Unggah File Jadi (PDF / Word)</label>
-                <p style="font-size: 12px; color: #7f8c8d; margin-bottom: 10px;">Jika Anda mengunggah file di sini, sistem akan mengirimkan file tersebut ke user dan <b>mengabaikan</b> isian variabel di atas.</p>
-                <input type="file" name="file_custom" accept=".pdf,.doc,.docx" style="border: none; background: none; padding: 0;">
-            </div>
-
             <button type="submit" name="kirim_surat">Kirim Surat ke Dashboard User</button>
         </form>
     </div>
 
     <script>
         const usersData = <?= json_encode($all_users); ?>;
+        const existingVars = <?= json_encode($existing_data); ?>;
         
         // Jalankan otomatis jika datang dari tombol "Proses Surat"
         window.onload = function() {
@@ -192,11 +197,11 @@ if ($users_res) {
             if (kategori === 'mahasiswa') {
                 optMhs.style.display = 'block';
                 templateSelect.disabled = false;
-                templateSelect.options[0].text = "-- Pilih Template --";
+                templateSelect.options[0].text = "-- Pilih Jenis Surat --";
             } else if (kategori === 'dosen') {
                 optDosen.style.display = 'block';
                 templateSelect.disabled = false;
-                templateSelect.options[0].text = "-- Pilih Template --";
+                templateSelect.options[0].text = "-- Pilih Jenis Surat --";
             }
 
             document.getElementById('dynamicContainer').style.display = "none";
@@ -215,71 +220,85 @@ if ($users_res) {
             // Auto-fill Data
             const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
+            // Fungsi pembantu untuk mengambil nilai lama jika ada
+            const getVal = (key, def = '') => (existingVars && existingVars[key]) ? existingVars[key] : def;
+
             let commonFields = `
-                <label>Nama Lengkap</label><input type="text" name="var[nama]" value="${userOpt.dataset.nama}" required>
-                <label>NIM / NIDN</label><input type="text" name="var[id_number]" value="${userOpt.dataset.id || ''}" required>
-                <label>Nomor Surat SK</label><input type="text" name="var[nomor_surat]" placeholder="Contoh: 153/FSIK-UMGO/KEP/V/2026" required>
-                <label>Tahun Akademik</label><input type="text" name="var[ta]" placeholder="Contoh: 2025/2026" required>
-                <label>Tanggal Surat (Muncul di Footer)</label><input type="text" name="var[tanggal_surat]" value="${today}" required>
+                <label>Nama Lengkap</label><input type="text" name="var[nama]" value="${getVal('nama', userOpt.dataset.nama)}" required>
+                <label>NIM / NIDN</label><input type="text" name="var[id_number]" value="${getVal('nim', userOpt.dataset.id || '')}" required>
+                <label>Nomor Surat SK</label><input type="text" name="var[nomor_surat]" value="${getVal('nomor_surat')}" placeholder="Contoh: 153/FSIK-UMGO/KEP/V/2026" required>
+                <label>Tahun Akademik</label><input type="text" name="var[ta]" value="${getVal('ta')}" placeholder="Contoh: 2025/2026" required>
+                <label>Tanggal Surat (Muncul di Footer)</label><input type="text" name="var[tanggal_surat]" value="${getVal('tanggal_surat', today)}" required>
             `;
 
             let specificFields = "";
             if(template === "Surat permintaan data awal penelitian") {
                 specificFields = `
-                    <label>Lokasi Penelitian</label><input type="text" name="var[lokasi]" required>
-                    <label>Data yang Diminta</label><textarea name="var[data]" required></textarea>`;
+                    <label>Lokasi Penelitian</label><input type="text" name="var[lokasi]" value="${getVal('lokasi')}" required>
+                    <label>Data yang Diminta</label><textarea name="var[data]" class="summernote" required>${getVal('data')}</textarea>`;
             } else if(template === "Surat permintaan data hasil penelitian") {
                 specificFields = `
-                    <label>Lokasi Penelitian</label><input type="text" name="var[lokasi]" required>
-                    <label>Instansi Tujuan</label><input type="text" name="var[instansi]" required>`;
+                    <label>Lokasi Penelitian</label><input type="text" name="var[lokasi]" value="${getVal('lokasi')}" required>
+                    <label>Instansi Tujuan</label><input type="text" name="var[instansi]" value="${getVal('instansi')}" required>`;
             } else if(template.includes("SK pembimbing")) {
                 specificFields = `
-                    <label>Judul Skripsi</label><textarea name="var[judul]" required></textarea>
-                    <label>Nama Pembimbing 1</label><input type="text" name="var[p1]" required>
-                    <label>Nama Pembimbing 2</label><input type="text" name="var[p2]" required>`;
+                    <label>Judul Skripsi</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
+                    <label>Nama Pembimbing 1</label><input type="text" name="var[p1]" value="${getVal('p1')}" required>
+                    <label>Nama Pembimbing 2</label><input type="text" name="var[p2]" value="${getVal('p2')}" required>`;
             } else if(template === "Permohonan SK ujian proposal") {
                 specificFields = `
-                    <label>Judul Proposal</label><textarea name="var[judul]" required></textarea>
-                    <label>Hari / Tanggal / Waktu</label><input type="text" name="var[waktu]" placeholder="Contoh: Senin, 20 Mei 2024 / 09:00 WIB" required>
-                    <label>Nama Penguji</label><textarea name="var[penguji]" required></textarea>`;
+                    <label>Judul Proposal</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
+                    <label>Hari / Tanggal / Waktu</label><input type="text" name="var[waktu]" value="${getVal('waktu')}" placeholder="Contoh: Senin, 20 Mei 2024 / 09:00 WIB" required>
+                    <label>Nama Penguji</label><textarea name="var[penguji]" class="summernote" required>${getVal('penguji')}</textarea>`;
             } else if(template === "Permohonan SK ujian seminar hasil") {
                 specificFields = `
-                    <label>Judul Skripsi</label><textarea name="var[judul]" required></textarea>
-                    <label>Catatan Kelayakan</label><textarea name="var[catatan]" required></textarea>`;
+                    <label>Judul Skripsi</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
+                    <label>Catatan Kelayakan</label><textarea name="var[catatan]" class="summernote" required>${getVal('catatan')}</textarea>`;
             } else if(template === "Permohonan SK ujian skripsi") {
                 specificFields = `
-                    <label>Judul Skripsi</label><textarea name="var[judul]" required></textarea>
-                    <label>Tanggal Kelulusan Syarat</label><input type="date" name="var[tgl_lulus]" required>`;
+                    <label>Judul Skripsi</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
+                    <label>Tanggal Kelulusan Syarat</label><input type="date" name="var[tgl_lulus]" value="${getVal('tgl_lulus')}" required>`;
             } else if(template === "Persetujuan waktu ujian") {
                 specificFields = `
-                    <label>Hari / Tanggal</label><input type="text" name="var[tanggal]" required>
-                    <label>Jam</label><input type="text" name="var[jam]" required>
-                    <label>Ruangan</label><input type="text" name="var[ruangan]" required>`;
+                    <label>Hari / Tanggal</label><input type="text" name="var[tanggal]" value="${getVal('tanggal')}" required>
+                    <label>Jam</label><input type="text" name="var[jam]" value="${getVal('jam')}" required>
+                    <label>Ruangan</label><input type="text" name="var[ruangan]" value="${getVal('ruangan')}" required>`;
             } else if(template === "Undangan ujian") {
                 specificFields = `
-                    <label>Nama Mahasiswa</label><input type="text" name="var[nama_mhs]" required>
-                    <label>Nama Dosen yang Diundang</label><input type="text" name="var[nama_dosen]" required>
-                    <label>Waktu</label><input type="text" name="var[waktu]" required>
-                    <label>Link Zoom / Ruang Rapat</label><input type="text" name="var[lokasi]" required>`;
+                    <label>Judul Skripsi / Tugas Akhir</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>`;
             } else if(template.includes("surat tugas")) {
                 specificFields = `
-                    <label>Nama Kegiatan</label><input type="text" name="var[kegiatan]" required>
-                    <label>Lokasi</label><input type="text" name="var[lokasi]" required>
-                    <label>Durasi Tugas</label><input type="text" name="var[durasi]" required>`;
+                    <label>Nama Kegiatan</label><input type="text" name="var[kegiatan]" value="${getVal('kegiatan')}" required>
+                    <label>Lokasi</label><input type="text" name="var[lokasi]" value="${getVal('lokasi')}" required>
+                    <label>Durasi Tugas</label><input type="text" name="var[durasi]" value="${getVal('durasi')}" required>`;
             } else if(template === "Surat rekomendasi penelitian") {
                 specificFields = `
-                    <label>Judul Penelitian</label><textarea name="var[judul]" required></textarea>
-                    <label>Pihak Pemberi Rekomendasi</label><input type="text" name="var[pemberi]" required>`;
+                    <label>Judul Penelitian</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
+                    <label>Pihak Pemberi Rekomendasi</label><input type="text" name="var[pemberi]" value="${getVal('pemberi')}" required>`;
             } else if(template === "Permintaan data penelitian") {
                 specificFields = `
-                    <label>Topik Riset</label><input type="text" name="var[topik]" required>
-                    <label>Sumber Data yang Dituju</label><input type="text" name="var[sumber]" required>`;
+                    <label>Topik Riset</label><input type="text" name="var[topik]" value="${getVal('topik')}" required>
+                    <label>Sumber Data yang Dituju</label><input type="text" name="var[sumber]" value="${getVal('sumber')}" required>`;
             } else {
                 // Default fallback fields
-                specificFields = `<label>Catatan/Isi Spesifik</label><textarea name="var[catatan]"></textarea>`;
+                specificFields = `<label>Catatan/Isi Spesifik</label><textarea name="var[catatan]" class="summernote">${getVal('catatan')}</textarea>`;
             }
 
             body.innerHTML = commonFields + specificFields;
+
+            // Inisialisasi Summernote pada semua textarea dengan class .summernote
+            $('.summernote').summernote({
+                placeholder: 'Gunakan toolbar di atas untuk memformat teks...',
+                tabsize: 2,
+                height: 150,
+                toolbar: [
+                    ['style', ['bold', 'italic', 'underline', 'clear']],
+                    ['font', ['strikethrough']],
+                    ['para', ['ul', 'ol', 'paragraph']],
+                    ['table', ['table']],
+                    ['view', ['codeview']]
+                ]
+            });
         }
     </script>
 </body>
