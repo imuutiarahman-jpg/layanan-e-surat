@@ -18,17 +18,17 @@ if (!$data) {
     die("Data tidak ditemukan.");
 }
 
-// Validasi akses: mahasiswa/dosen hanya bisa lihat surat miliknya sendiri
+// Validasi akses
 if ($_SESSION['role'] !== 'admin' && $data['user_id'] != $_SESSION['user_id']) {
     die("Anda tidak memiliki akses ke surat ini.");
 }
 
-// Validasi status: hanya surat yang sudah selesai yang bisa dicetak
+// Validasi status
 if ($data['status'] !== 'Selesai') {
     die("Surat belum selesai diproses.");
 }
 
-// === JIKA SURAT BERUPA FILE UPLOAD (bukan SYSTEM_GENERATED) ===
+// === JIKA SURAT BERUPA FILE UPLOAD ===
 if ($data['surat_jadi'] !== 'SYSTEM_GENERATED') {
     $file_path = "uploads/" . $data['surat_jadi'];
     $extension = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
@@ -38,7 +38,7 @@ if ($data['surat_jadi'] !== 'SYSTEM_GENERATED') {
         <html lang="id">
         <head>
             <meta charset="UTF-8">
-            <title>Pratinjau Surat PDF</title>
+            <title>Pratinjau Surat</title>
             <style>
                 body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #525659; }
                 iframe { width: 100%; height: 100%; border: none; }
@@ -77,7 +77,7 @@ if ($data['surat_jadi'] !== 'SYSTEM_GENERATED') {
     }
 }
 
-// === SURAT SYSTEM_GENERATED: Render dari template RTF ===
+// === SURAT SYSTEM_GENERATED: Generate PDF dari template RTF ===
 $vars = [];
 if (!empty($data['data_surat'])) {
     $vars = json_decode($data['data_surat'], true) ?: [];
@@ -86,140 +86,144 @@ if (!empty($data['data_surat'])) {
 // Mapping jenis surat → file RTF template
 $rtf_map = [
     'Permohonan SK ujian proposal' => 'rtf/sk_proposal_si.rtf',
-    // Tambahkan mapping lain saat file RTF tersedia:
-    // 'Permohonan SK pembimbing' => 'rtf/sk_pembimbing_si.rtf',
 ];
 
-// Mapping key JSON dari admin_kirim_surat → placeholder di template RTF
+// Mapping key JSON → placeholder di template RTF
 $placeholder_map = [
     'Permohonan SK ujian proposal' => [
-        '%nomor surat%'             => 'nomor_surat',
-        '%hari tanggal%'            => 'waktu',
-        '%Nama dan Nim%'            => ['nama', 'id_number'], // gabungan
-        '%Judul%'                   => 'judul',
-        '%Nama Pembimbing 1 dan 2 %' => ['p1', 'p2'],        // gabungan
-        '%Nama Penguju%'            => 'penguji',
+        '%nomor surat%'              => 'nomor_surat',
+        '%hari tanggal%'             => 'waktu',
+        '%Nama dan Nim%'             => ['nama', 'id_number'],
+        '%Judul%'                    => 'judul',
+        '%Nama Pembimbing 1 dan 2 %' => ['p1', 'p2'],
+        '%Nama Penguju%'             => 'penguji',
     ],
 ];
 
-$rtf_file = isset($rtf_map[$data['jenis_surat']]) ? $rtf_map[$data['jenis_surat']] : null;
+$rtf_file = $rtf_map[$data['jenis_surat']] ?? null;
 $has_rtf = $rtf_file && file_exists($rtf_file);
 
-// Fungsi untuk resolve placeholder value dari vars
-function resolvePlaceholder($mapping, $vars, $data) {
+function resolvePlaceholder($mapping, $vars) {
     if (is_array($mapping)) {
-        // Gabungkan beberapa field
         $parts = [];
         foreach ($mapping as $key) {
-            if (isset($vars[$key]) && $vars[$key] !== '') {
+            if (!empty($vars[$key])) {
                 $parts[] = strip_tags($vars[$key]);
             }
         }
         return implode("\n", $parts);
     }
-    // Single field
-    if (isset($vars[$mapping]) && $vars[$mapping] !== '') {
-        return strip_tags($vars[$mapping]);
-    }
-    return '';
+    return !empty($vars[$mapping]) ? strip_tags($vars[$mapping]) : '';
 }
 
-// Download RTF jika diminta
-if (isset($_GET['download']) && $_GET['download'] === 'rtf' && $has_rtf) {
-    $rtf_content = file_get_contents($rtf_file);
-    $mappings = $placeholder_map[$data['jenis_surat']] ?? [];
-    foreach ($mappings as $placeholder => $field) {
-        $value = resolvePlaceholder($field, $vars, $data);
-        $rtf_content = str_replace($placeholder, $value, $rtf_content);
+// Generate atau ambil PDF dari cache
+$pdf_dir = 'uploads/pdf_cache';
+if (!is_dir($pdf_dir)) {
+    mkdir($pdf_dir, 0777, true);
+}
+
+$pdf_filename = 'surat_' . $id . '_' . md5($data['data_surat'] ?? '') . '.pdf';
+$pdf_path = $pdf_dir . '/' . $pdf_filename;
+
+// Serve PDF jika parameter ?serve=pdf
+if (isset($_GET['serve']) && $_GET['serve'] === 'pdf') {
+    if (!file_exists($pdf_path)) {
+        // Generate PDF
+        if ($has_rtf) {
+            $phpWord = \PhpOffice\PhpWord\IOFactory::load($rtf_file, 'RTF');
+            \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
+            \PhpOffice\PhpWord\Settings::setPdfRendererPath(realpath('vendor/dompdf/dompdf'));
+            $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
+
+            // Replace placeholder di PhpWord object tidak bisa langsung,
+            // jadi kita generate HTML dulu, replace, lalu convert ke PDF via DomPDF
+            $htmlWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'HTML');
+            ob_start();
+            $htmlWriter->save('php://output');
+            $html_content = ob_get_clean();
+
+            $mappings = $placeholder_map[$data['jenis_surat']] ?? [];
+            foreach ($mappings as $placeholder => $field) {
+                $value = resolvePlaceholder($field, $vars);
+                $value_html = nl2br(htmlspecialchars($value));
+                $html_content = str_replace(htmlspecialchars($placeholder), $value_html, $html_content);
+                $html_content = str_replace($placeholder, $value_html, $html_content);
+            }
+
+            // Generate PDF via DomPDF
+            $dompdf = new \Dompdf\Dompdf(['isRemoteEnabled' => true]);
+            $dompdf->loadHtml($html_content);
+            $dompdf->setPaper('A4', 'portrait');
+            $dompdf->render();
+            file_put_contents($pdf_path, $dompdf->output());
+        } else {
+            // Fallback: generate PDF sederhana untuk jenis surat tanpa template RTF
+            $html = buildFallbackHtml($data, $vars);
+            $dompdf = new \Dompdf\Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->setPaper('A4', 'portrait');
+            $dompdf->render();
+            file_put_contents($pdf_path, $dompdf->output());
+        }
     }
-    header("Content-type: application/rtf");
-    header("Content-Disposition: attachment; filename=Surat_" . str_replace(' ', '_', $data['jenis_surat']) . ".rtf");
-    echo $rtf_content;
+
+    // Serve PDF inline (tampil di browser)
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . $pdf_filename . '"');
+    header('Content-Length: ' . filesize($pdf_path));
+    readfile($pdf_path);
     exit;
 }
 
-// === PREVIEW HTML: Convert RTF → HTML via PHPWord ===
-if ($has_rtf) {
-    // Load RTF dan convert ke HTML
-    $phpWord = \PhpOffice\PhpWord\IOFactory::load($rtf_file, 'RTF');
-    $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'HTML');
-    ob_start();
-    $writer->save('php://output');
-    $html_content = ob_get_clean();
-
-    // Replace placeholder di HTML output
-    $mappings = $placeholder_map[$data['jenis_surat']] ?? [];
-    foreach ($mappings as $placeholder => $field) {
-        $value = resolvePlaceholder($field, $vars, $data);
-        // Untuk HTML, bisa mengandung newline → convert ke <br>
-        $value_html = nl2br(htmlspecialchars($value));
-        $html_content = str_replace(htmlspecialchars($placeholder), $value_html, $html_content);
-        $html_content = str_replace($placeholder, $value_html, $html_content);
-    }
-
-    // Inject toolbar dan styling tambahan
-    $toolbar = '
-    <div style="background:#2c3e50; padding:12px; text-align:center; position:sticky; top:0; z-index:100; font-family:sans-serif;">
-        <button onclick="window.print()" style="padding:8px 16px; border:none; border-radius:4px; background:#3498db; color:white; font-weight:600; cursor:pointer; margin:0 5px;">🖨️ Cetak / Simpan PDF</button>
-        <a href="cetak_surat.php?id=' . $id . '&download=rtf" style="padding:8px 16px; border:none; border-radius:4px; background:#2ecc71; color:white; font-weight:600; text-decoration:none; margin:0 5px; display:inline-block;">📄 Unduh RTF</a>
-        <button onclick="history.back()" style="padding:8px 16px; border:none; border-radius:4px; background:#95a5a6; color:white; font-weight:600; cursor:pointer; margin:0 5px;">← Kembali</button>
-    </div>';
-
-    $print_style = '<style>@media print { body > div:first-child { display: none !important; } }</style>';
-
-    // Inject toolbar setelah <body>
-    $html_content = str_replace('<body>', '<body>' . $toolbar . $print_style, $html_content);
-
-    echo $html_content;
-    exit;
-}
-
-// === FALLBACK: Jika tidak ada template RTF, tampilkan data dalam format sederhana ===
-$nama = htmlspecialchars($vars['nama'] ?? $data['nama_lengkap']);
-$nim = htmlspecialchars($vars['id_number'] ?? $vars['nim'] ?? $data['nomor_induk']);
+// === TAMPILAN UTAMA: PDF viewer dalam iframe ===
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Preview Surat - <?= htmlspecialchars($data['jenis_surat']) ?></title>
+    <title>Pratinjau Surat - <?= htmlspecialchars($data['jenis_surat']) ?></title>
     <style>
-        @page { size: A4; margin: 20mm; }
-        body { font-family: 'Times New Roman', serif; line-height: 1.8; background: #f0f0f0; margin: 0; }
-        .no-print { background: #2c3e50; padding: 12px; text-align: center; position: sticky; top: 0; z-index: 100; }
-        .no-print button, .no-print a { padding: 8px 16px; border: none; border-radius: 4px; font-size: 13px; font-family: sans-serif; font-weight: 600; cursor: pointer; margin: 0 5px; text-decoration: none; display: inline-block; color: white; }
-        .page { width: 210mm; min-height: 297mm; padding: 20mm 25mm; margin: 10mm auto; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); box-sizing: border-box; }
-        .kop { text-align: center; border-bottom: 3px double #000; padding-bottom: 10px; margin-bottom: 30px; }
-        .kop h2, .kop h3, .kop p { margin: 0; }
-        table.info td { border: none; padding: 3px 8px; vertical-align: top; }
-        @media print { body { background: none; } .page { margin: 0; box-shadow: none; } .no-print { display: none; } }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #525659; }
+        iframe { width: 100%; height: calc(100% - 50px); border: none; }
+        .toolbar { background: #2c3e50; padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; height: 30px; }
+        .toolbar .title { color: #ecf0f1; font-family: sans-serif; font-size: 13px; }
+        .toolbar .actions a, .toolbar .actions button { padding: 6px 14px; border: none; border-radius: 4px; font-size: 12px; font-family: sans-serif; font-weight: 600; cursor: pointer; text-decoration: none; margin-left: 8px; display: inline-block; }
+        .btn-back { background: #95a5a6; color: white; }
+        .btn-download { background: #3498db; color: white; }
     </style>
 </head>
 <body>
-    <div class="no-print">
-        <button onclick="window.print()" style="background:#3498db;">🖨️ Cetak / Simpan PDF</button>
-        <button onclick="history.back()" style="background:#95a5a6;">← Kembali</button>
-    </div>
-    <div class="page">
-        <div class="kop">
-            <h2>UNIVERSITAS MUHAMMADIYAH GORONTALO</h2>
-            <h3>FAKULTAS SAINS DAN ILMU KOMPUTER</h3>
-            <p style="font-size:11px;">Jl. Prof. Dr. Mansoer Pateda, Pentadio Timur, Gorontalo</p>
-        </div>
-        <h3 style="text-align:center;"><?= strtoupper(htmlspecialchars($data['jenis_surat'])) ?></h3>
-        <table class="info">
-            <?php foreach ($vars as $key => $val): ?>
-            <tr>
-                <td style="width:150px;"><b><?= ucfirst(str_replace('_', ' ', htmlspecialchars($key))) ?></b></td>
-                <td>: <?= $val ?></td>
-            </tr>
-            <?php endforeach; ?>
-        </table>
-        <div style="margin-top:60px; float:right; text-align:center; width:250px;">
-            <p>Gorontalo, <?= htmlspecialchars($vars['tanggal_surat'] ?? date('d F Y')) ?></p>
-            <p>Dekan,</p><br><br><br>
-            <p><b><u>Dr. Mohamad Ervandi, S.Pt., MP</u></b></p>
+    <div class="toolbar">
+        <span class="title"><?= htmlspecialchars($data['jenis_surat']) ?></span>
+        <div class="actions">
+            <a href="cetak_surat.php?id=<?= $id ?>&serve=pdf" download="<?= $pdf_filename ?>" class="btn-download">⬇ Unduh PDF</a>
+            <a href="javascript:history.back()" class="btn-back">← Kembali</a>
         </div>
     </div>
+    <iframe src="cetak_surat.php?id=<?= $id ?>&serve=pdf#toolbar=1"></iframe>
 </body>
 </html>
+<?php
+exit;
+
+// Fallback HTML untuk jenis surat tanpa template RTF
+function buildFallbackHtml($data, $vars) {
+    $nama = htmlspecialchars($vars['nama'] ?? $data['nama_lengkap']);
+    $rows = '';
+    foreach ($vars as $key => $val) {
+        $label = ucfirst(str_replace('_', ' ', htmlspecialchars($key)));
+        $rows .= "<tr><td style='width:150px;vertical-align:top;'><b>$label</b></td><td>: $val</td></tr>";
+    }
+    $tanggal = htmlspecialchars($vars['tanggal_surat'] ?? date('d F Y'));
+    return "<!DOCTYPE html><html><head><meta charset='UTF-8'>
+    <style>body{font-family:'Times New Roman',serif;line-height:1.8;padding:20mm 25mm;}
+    .kop{text-align:center;border-bottom:3px double #000;padding-bottom:10px;margin-bottom:30px;}
+    .kop h2,.kop h3,.kop p{margin:0;}table td{border:none;padding:3px 8px;}</style></head><body>
+    <div class='kop'><h2>UNIVERSITAS MUHAMMADIYAH GORONTALO</h2><h3>FAKULTAS SAINS DAN ILMU KOMPUTER</h3>
+    <p style='font-size:11px;'>Jl. Prof. Dr. Mansoer Pateda, Pentadio Timur, Gorontalo</p></div>
+    <h3 style='text-align:center;'>" . strtoupper(htmlspecialchars($data['jenis_surat'])) . "</h3>
+    <table>$rows</table>
+    <div style='margin-top:60px;float:right;text-align:center;width:250px;'>
+    <p>Gorontalo, $tanggal</p><p>Dekan,</p><br><br><br>
+    <p><b><u>Dr. Mohamad Ervandi, S.Pt., MP</u></b></p></div></body></html>";
+}
