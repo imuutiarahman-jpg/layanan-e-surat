@@ -4,7 +4,7 @@ session_start();
 $host = "localhost";
 $user = "root";
 $pass = "";
-$db   = "db_layanan_surat";
+$db = "db_layanan_surat";
 
 // Disable exceptions to use procedural error handling (die)
 mysqli_report(MYSQLI_REPORT_OFF);

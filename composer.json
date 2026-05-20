@@ -1,0 +1,13 @@
+{
+    "name": "layanan/e-surat",
+    "description": "Layanan E-Surat",
+    "authors": [
+        {
+            "name": "wayosu",
+            "email": "wayosu.dev@gmail.com"
+        }
+    ],
+    "require": {
+        "phpoffice/phpword": "^1.3"
+    }
+}
