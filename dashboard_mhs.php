@@ -153,11 +153,7 @@ $tampil = mysqli_stmt_get_result($stmt_tampil);
             </td>
             <td>
                 <?php if($row['status'] == 'Selesai' && !empty($row['surat_jadi'])) { ?>
-                    <?php if($row['surat_jadi'] == 'SYSTEM_GENERATED') { ?>
-                        <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download">Lihat / Cetak</a>
-                    <?php } else { ?>
-                        <a href="uploads/<?= htmlspecialchars($row['surat_jadi']); ?>" download class="btn-download">Unduh File</a>
-                    <?php } ?>
+                    <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download">Lihat / Cetak</a>
                 <?php } else { echo "Belum tersedia"; } ?>
             </td>
         </tr>
