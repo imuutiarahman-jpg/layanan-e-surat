@@ -38,27 +38,42 @@ if (isset($_GET['delete_id'])) {
 $view = isset($_GET['view']) ? $_GET['view'] : 'mahasiswa';
 $prodi_filter = isset($_GET['prodi']) ? $_GET['prodi'] : '';
 $search = isset($_GET['search']) ? mysqli_real_escape_string($koneksi, $_GET['search']) : '';
+$role_target = ($view == 'dosen') ? 'dosen' : 'mahasiswa';
 
 $sql = "SELECT permohonan_surat.*, users.nama_lengkap, users.role, users.prodi 
         FROM permohonan_surat 
         JOIN users ON permohonan_surat.user_id = users.id 
-        WHERE permohonan_surat.status IN ('Selesai', 'Ditolak') 
-        AND users.role = '$view'";
+        WHERE permohonan_surat.status IN ('Selesai', 'Ditolak') AND users.role = ?";
 
-if ($view == 'mahasiswa' && !empty($prodi_filter)) {
-    $sql .= " AND users.prodi = '$prodi_filter'";
+if (!empty($prodi_filter)) {
+    $sql .= " AND users.prodi = ?";
 }
 
 if (!empty($search)) {
-    $sql .= " AND (users.nama_lengkap LIKE '%$search%' OR permohonan_surat.jenis_surat LIKE '%$search%' OR users.nomor_induk LIKE '%$search%')";
+    $sql .= " AND (users.nama_lengkap LIKE ? OR permohonan_surat.jenis_surat LIKE ? OR users.nomor_induk LIKE ?)";
 }
 
 $sql .= " ORDER BY permohonan_surat.id DESC";
-$query = mysqli_query($koneksi, $sql);
 
-// Cek apakah kueri berhasil dijalankan
+$stmt_arsip = mysqli_prepare($koneksi, $sql);
+
+if (!empty($prodi_filter) && !empty($search)) {
+    $s_term = "%$search%";
+    mysqli_stmt_bind_param($stmt_arsip, "sssss", $role_target, $prodi_filter, $s_term, $s_term, $s_term);
+} elseif (!empty($prodi_filter)) {
+    mysqli_stmt_bind_param($stmt_arsip, "ss", $role_target, $prodi_filter);
+} elseif (!empty($search)) {
+    $s_term = "%$search%";
+    mysqli_stmt_bind_param($stmt_arsip, "ssss", $role_target, $s_term, $s_term, $s_term);
+} else {
+    mysqli_stmt_bind_param($stmt_arsip, "s", $role_target);
+}
+
+mysqli_stmt_execute($stmt_arsip);
+$query = mysqli_stmt_get_result($stmt_arsip);
+
 if (!$query) {
-    die("Gagal mengambil data arsip. Pastikan kolom 'prodi' sudah ada di tabel 'users'. Error: " . mysqli_error($koneksi));
+    die("Gagal mengambil data arsip. Error: " . mysqli_error($koneksi));
 }
 
 $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
@@ -96,9 +111,12 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
 </head>
 <body>
     <div class="header">
-        <h2>Arsip Surat</h2>
+        <div style="display: flex; align-items: center;">
+            <img src="logo/logo.png" alt="Logo" style="height: 90px; margin-right: 15px;">
+            <h2 style="margin: 0;">Arsip Surat</h2>
+        </div>
         <div>
-            <a href="dashboard_admin.php" style="background: #3498db; margin-right: 10px;">Kembali ke Dashboard</a>
+            <a href="dashboard_admin.php" style="background: #3498db; margin-right: 20px;">Kembali ke Dashboard</a>
             <a href="logout.php" style="background: #e74c3c;">Sign Out</a>
         </div>
     </div>
@@ -158,7 +176,7 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
                         <b><?= htmlspecialchars($row['nama_lengkap']); ?></b><br>
                         <small style="color:#718096"><?= $row['prodi'] ? htmlspecialchars($row['prodi']) : ucfirst($row['role']); ?></small>
                     </td>
-                    <td><?= htmlspecialchars($nomor_surat); ?></td>
+                    <td><?= htmlspecialchars($nomor_full); ?></td>
                     <td><?= htmlspecialchars($row['jenis_surat']); ?></td>
                     <td><?= htmlspecialchars($row['tgl_pengajuan']); ?></td>
                     <td>

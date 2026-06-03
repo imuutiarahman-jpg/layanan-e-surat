@@ -12,6 +12,8 @@ $data = mysqli_fetch_assoc($query);
 if (!$data) {
     die("Data tidak ditemukan.");
 }
+
+$list_prodi = ['Umum', 'Dosen', 'Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -38,6 +40,15 @@ if (!$data) {
                 <input type="text" name="nama_surat" class="form-control" value="<?= htmlspecialchars($data['nama_surat']) ?>" required>
             </div>
             
+            <div class="mb-3">
+                <label class="form-label fw-bold">Kategori / Prodi</label>
+                <select name="prodi" class="form-select" required>
+                    <?php foreach($list_prodi as $p): ?>
+                        <option value="<?= $p ?>" <?= ($data['prodi'] == $p) ? 'selected' : '' ?>><?= $p ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
             <div class="mb-4">
                 <label class="form-label fw-bold">Variabel Tambahan</label>
                 <input type="text" name="variabel_tambahan" class="form-control" value="<?= htmlspecialchars($data['variabel_tambahan']) ?>">

@@ -8,7 +8,7 @@ if (!isset($_SESSION['login']) || $_SESSION['role'] != 'mahasiswa') {
 $user_id = $_SESSION['user_id'];
 
 // Ambil data profil mahasiswa untuk pre-fill formulir
-$u_query = mysqli_query($koneksi, "SELECT nama_lengkap, nomor_induk FROM users WHERE id = '$user_id'");
+$u_query = mysqli_query($koneksi, "SELECT nama_lengkap, nomor_induk, prodi FROM users WHERE id = '$user_id'");
 $u_data = mysqli_fetch_assoc($u_query);
 
 // Proses Pengajuan Surat
@@ -19,18 +19,31 @@ if (isset($_POST['ajukan'])) {
     
     $berkas = $_FILES['berkas']['name'];
     $tmp_name = $_FILES['berkas']['tmp_name'];
-    $berkas_baru = time() . "_" . $berkas; // Hindari nama file kembar
+    $ekstensi = strtolower(pathinfo($berkas, PATHINFO_EXTENSION));
+    $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+
+    if (!in_array($ekstensi, $allowed)) {
+        echo "<script>alert('Format file tidak diizinkan! (Hanya PDF/JPG/PNG)');</script>";
+    } else {
+        $berkas_baru = time() . "_" . bin2hex(random_bytes(4)) . "." . $ekstensi;
+        if (!is_dir('uploads')) mkdir('uploads', 0777, true);
     
-    if (!is_dir('uploads')) {
-        mkdir('uploads', 0777, true);
-    }
-    
-    if (move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
-        $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, catatan_user, berkas_pendukung, data_surat) VALUES (?, ?, ?, ?, ?)");
-        mysqli_stmt_bind_param($stmt, "issss", $user_id, $jenis_surat, $catatan, $berkas_baru, $data_surat);
-        mysqli_stmt_execute($stmt);
-        
-        echo "<script>alert('Permohonan berhasil dikirim!'); window.location='dashboard_mhs.php';</script>";
+        if (move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
+            $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, catatan_user, berkas_pendukung, data_surat) VALUES (?, ?, ?, ?, ?)");
+            if ($stmt) {
+                mysqli_stmt_bind_param($stmt, "issss", $user_id, $jenis_surat, $catatan, $berkas_baru, $data_surat);
+                if (mysqli_stmt_execute($stmt)) {
+                    echo "<script>alert('Permohonan berhasil dikirim!'); window.location='dashboard_mhs.php';</script>";
+                    exit;
+                } else {
+                    echo "<script>alert('Gagal mengeksekusi perintah: " . mysqli_stmt_error($stmt) . "');</script>";
+                }
+            } else {
+                echo "<script>alert('Gagal menyiapkan database: " . mysqli_error($koneksi) . "');</script>";
+            }
+        } else {
+            echo "<script>alert('Gagal mengunggah berkas. Pastikan folder uploads tersedia dan memiliki izin tulis.');</script>";
+        }
     }
 }
 
@@ -44,12 +57,15 @@ if ($stmt_notif) {
 }
 
 $stmt_tampil = mysqli_prepare($koneksi, "SELECT * FROM permohonan_surat WHERE user_id=? ORDER BY id DESC");
-mysqli_stmt_bind_param($stmt_tampil, "i", $user_id);
-mysqli_stmt_execute($stmt_tampil);
-$tampil = mysqli_stmt_get_result($stmt_tampil);
+$tampil = null;
+if ($stmt_tampil) {
+    mysqli_stmt_bind_param($stmt_tampil, "i", $user_id);
+    mysqli_stmt_execute($stmt_tampil);
+    $tampil = mysqli_stmt_get_result($stmt_tampil);
+}
 
 // Ambil daftar jenis surat dari master untuk dropdown
-$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan FROM master_surat_jenis ORDER BY nama_surat ASC");
+$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan, prodi FROM master_surat_jenis ORDER BY nama_surat ASC");
 $surat_options = [];
 while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt; }
 ?>
@@ -57,166 +73,263 @@ while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt;
 <html>
 <head>
     <title>Dashboard Mahasiswa | E-Surat</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: 'Inter', sans-serif; background: #f8f9fc; margin: 0; color: #333; }
-        .navbar { background: #4e73df; padding: 15px 30px; color: white; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .navbar a { color: rgba(255,255,255,0.8); text-decoration: none; font-weight: 600; }
-        .container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
-        .card { background: white; border-radius: 10px; box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.1); margin-bottom: 24px; padding: 25px; border: 1px solid #e3e6f0; }
-        h2, h3 { color: #4e73df; margin-top: 0; }
+        :root {
+            --primary: #4e73df;
+            --success: #1cc88a;
+            --info: #36b9cc;
+            --warning: #f6c23e;
+            --danger: #e74a3b;
+            --dark: #5a5c69;
+            --light: #f8f9fc;
+        }
+        body { font-family: 'Inter', sans-serif; background: #f0f2f5; margin: 0; color: #444; }
+        .navbar { background: white; padding: 15px 40px; color: var(--primary); display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 1000; }
+        .navbar .brand { font-size: 20px; font-weight: 700; color: var(--primary); text-decoration: none; }
+        .navbar .logout-btn { color: var(--danger); text-decoration: none; font-weight: 600; font-size: 14px; border: 1px solid var(--danger); padding: 6px 15px; border-radius: 6px; transition: 0.3s; }
+        .navbar .logout-btn:hover { background: var(--danger); color: white; }
+        
+        .container { max-width: 1100px; margin: 30px auto; padding: 0 20px; }
+        .welcome-section { margin-bottom: 30px; }
+        .welcome-section h2 { margin: 0; font-weight: 700; color: #2e3b4e; }
+        .welcome-section p { color: #858796; margin: 5px 0 0; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: white; padding: 20px; border-radius: 12px; border-left: 4px solid var(--primary); box-shadow: 0 4px 6px rgba(0,0,0,0.04); display: flex; align-items: center; justify-content: space-between; }
+        .stat-card .label { font-size: 12px; font-weight: 800; color: var(--primary); text-transform: uppercase; margin-bottom: 5px; }
+        .stat-card .value { font-size: 22px; font-weight: 700; color: #5a5c69; }
+        .stat-card i { font-size: 28px; color: #dddfeb; }
+
+        .main-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 25px; align-items: start; }
+        @media (max-width: 850px) { .main-grid { grid-template-columns: 1fr; } }
+
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); margin-bottom: 24px; padding: 25px; border: 1px solid #eef0f7; }
+        .card h3 { color: #2e3b4e; margin-top: 0; font-size: 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        
         label { font-weight: 600; display: block; margin-bottom: 8px; font-size: 14px; }
-        input, textarea, select { width: 100%; padding: 10px; border: 1px solid #d1d3e2; border-radius: 5px; margin-bottom: 15px; box-sizing: border-box; }
-        button { background: #1cc88a; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; font-weight: 600; width: 100%; }
-        button:hover { background: #17a673; }
+        input, textarea, select { width: 100%; padding: 12px; border: 1px solid #d1d3e2; border-radius: 8px; margin-bottom: 18px; box-sizing: border-box; font-family: inherit; font-size: 14px; transition: 0.2s; }
+        input:focus, select:focus, textarea:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(78, 115, 223, 0.1); }
+        
+        button { background: var(--success); color: white; border: none; padding: 14px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; font-size: 15px; transition: 0.3s; }
+        button:hover { background: #17a673; transform: translateY(-1px); box-shadow: 0 4px 10px rgba(28, 200, 138, 0.2); }
+        
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background: #f8f9fc; color: #4e73df; text-align: left; padding: 12px; border-bottom: 2px solid #e3e6f0; }
-        td { padding: 12px; border-bottom: 1px solid #e3e6f0; font-size: 14px; }
-        .badge { padding: 4px 10px; border-radius: 50px; color: white; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-        .bg-pending { background: #f6c23e; color: #fff; }
-        .bg-proses { background: #36b9cc; }
-        .bg-selesai { background: #1cc88a; }
-        .bg-ditolak { background: #e74a3b; }
-        .btn-download { color: #4e73df; text-decoration: none; border: 1px solid #4e73df; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        th { text-align: left; padding: 15px 12px; border-bottom: 2px solid #eef0f7; color: #858796; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+        td { padding: 15px 12px; border-bottom: 1px solid #eef0f7; font-size: 14px; color: #5a5c69; }
+        
+        .badge { padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .bg-pending { background: #fff4e5; color: #b7791f; }
+        .bg-proses { background: #e0f2fe; color: #0369a1; }
+        .bg-selesai { background: #dcfce7; color: #166534; }
+        .bg-ditolak { background: #fee2e2; color: #991b1b; }
+        
+        .btn-download { color: var(--primary); text-decoration: none; border: 1.5px solid var(--primary); padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; transition: 0.3s; }
+        .btn-download:hover { background: var(--primary); color: white; }
+        
         .dynamic-fields { background: #f0f2f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4e73df; display: none; }
-        .alert-notif { background: #d1e7dd; color: #0f5132; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #198754; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="navbar">
-        <span><b>E-Surat</b> | Portal Mahasiswa</span>
-        <a href="logout.php">Keluar</a>
+        <a href="dashboard_mhs.php" class="brand">
+            <img src="logo/logo.png" alt="Logo" style="height: 85px; margin-right: 10px; vertical-align: middle;">
+            E-Surat <span style="font-weight:300; color:#858796">Portal Mahasiswa</span>
+        </a>
+        <a href="logout.php" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Keluar</a>
     </div>
 
     <div class="container">
-        <h2>Halo, <?= htmlspecialchars($_SESSION['nama']); ?> 👋</h2>
+        <div class="welcome-section">
+            <h2>Halo, <?= htmlspecialchars($_SESSION['nama']); ?> 👋</h2>
+            <p>Selamat datang di dashboard layanan persuratan elektronik.</p>
+        </div>
 
         <?php 
         if ($notif_res && mysqli_num_rows($notif_res) > 0) {
             $msgs = [];
+            $ids_to_update = [];
             while ($n = mysqli_fetch_assoc($notif_res)) {
                 $msgs[] = "- " . $n['pesan'];
-                $nid = $n['id'];
-                // Tandai sudah dibaca agar tidak muncul lagi saat refresh
-                mysqli_query($koneksi, "UPDATE notifikasi SET is_read = 1 WHERE id = $nid");
+                $ids_to_update[] = $n['id'];
+            }
+            if(!empty($ids_to_update)) {
+                $id_list = implode(',', $ids_to_update);
+                mysqli_query($koneksi, "UPDATE notifikasi SET is_read = 1 WHERE id IN ($id_list)");
             }
             $msg_text = "PEMBERITAHUAN BARU:\n\n" . implode("\n", $msgs);
             echo "<script>alert(" . json_encode($msg_text) . ");</script>";
         }
         ?>
-
-        <div class="card">
-            <h3>Formulir Pengajuan Baru</h3>
-            <form method="POST" action="" enctype="multipart/form-data">
-                <label>Jenis Surat</label>
-                <select name="jenis_surat" id="jenis_surat" required onchange="showFormFields()">
-                    <option value="" disabled selected>-- Pilih Jenis Surat --</option>
-                    <?php foreach($surat_options as $opt): ?>
-                        <option value="<?= htmlspecialchars($opt['nama_surat']) ?>" data-vars="<?= htmlspecialchars($opt['variabel_tambahan']) ?>"><?= htmlspecialchars($opt['nama_surat']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-
-                <div id="dynamicContainer" class="dynamic-fields"></div>
-
-                <label>Catatan Tambahan</label>
-                <textarea name="catatan_user" rows="3" placeholder="Jelaskan kebutuhan Anda secara singkat..."></textarea>
-                <label>Unggah Berkas Pendukung (PDF/Image)</label>
-                <input type="file" name="berkas" required>
-                <button type="submit" name="ajukan">Kirim Permohonan</button>
-    </form>
+        
+        <div class="stats-grid">
+            <?php
+                $s_total = mysqli_num_rows(mysqli_query($koneksi, "SELECT id FROM permohonan_surat WHERE user_id='$user_id'"));
+                $s_pending = mysqli_num_rows(mysqli_query($koneksi, "SELECT id FROM permohonan_surat WHERE user_id='$user_id' AND status='Pending'"));
+                $s_selesai = mysqli_num_rows(mysqli_query($koneksi, "SELECT id FROM permohonan_surat WHERE user_id='$user_id' AND status='Selesai'"));
+            ?>
+            <div class="stat-card">
+                <div>
+                    <div class="label">Total Pengajuan</div>
+                    <div class="value"><?= $s_total; ?></div>
+                </div>
+                <i class="fa-solid fa-clipboard-list"></i>
+            </div>
+            <div class="stat-card" style="border-left-color: var(--warning);">
+                <div>
+                    <div class="label" style="color: var(--warning);">Menunggu</div>
+                    <div class="value"><?= $s_pending; ?></div>
+                </div>
+                <i class="fa-solid fa-clock"></i>
+            </div>
+            <div class="stat-card" style="border-left-color: var(--success);">
+                <div>
+                    <div class="label" style="color: var(--success);">Selesai</div>
+                    <div class="value"><?= $s_selesai; ?></div>
+                </div>
+                <i class="fa-solid fa-circle-check"></i>
+            </div>
         </div>
 
-        <div class="card">
-            <h3>Riwayat Pengajuan</h3>
-    <table>
-        <tr>
-                    <th>Layanan</th>
-                    <th>Tanggal</th>
-            <th>Status</th>
-                    <th>Aksi</th>
-        </tr>
-        <?php $no=1; while($row = mysqli_fetch_assoc($tampil)) { ?>
-        <tr>
-            <td><?= htmlspecialchars($row['jenis_surat']); ?></td>
-            <td><?= htmlspecialchars($row['tgl_pengajuan']); ?></td>
-            <td>
-                <?php 
-                    $class = '';
-                    if($row['status'] == 'Pending') $class = 'bg-pending';
-                    elseif($row['status'] == 'Diproses') $class = 'bg-proses';
-                    elseif($row['status'] == 'Selesai') $class = 'bg-selesai';
-                    elseif($row['status'] == 'Ditolak') $class = 'bg-ditolak';
-                ?>
-                <span class="badge <?= $class; ?>"><?= htmlspecialchars($row['status']); ?></span>
-            </td>
-            <td>
-                <?php if($row['status'] == 'Selesai' && !empty($row['surat_jadi'])) { ?>
-                    <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download">Cetak</a>
-                <?php } else { echo "Belum tersedia"; } ?>
-            </td>
-        </tr>
-        <?php } ?>
-    </table>
+        <div class="main-grid">
+            <div class="card">
+                <h3><i class="fa-solid fa-file-circle-plus" style="color:var(--primary)"></i> Pengajuan Baru</h3>
+                <form method="POST" action="" enctype="multipart/form-data">
+                    <label>Pilih Program Studi</label>
+                    <select id="filter_prodi" onchange="filterLetters()" required>
+                        <option value="Umum">Umum</option>
+                        <option value="Sistem Informasi">Sistem Informasi</option>
+                        <option value="Geografi">Geografi</option>
+                        <option value="Ilmu Komputer">Ilmu Komputer</option>
+                        <option value="Bisnis Digital">Bisnis Digital</option>
+                        <option value="Teknik Sipil">Teknik Sipil</option>
+                        <option value="Akuakultur">Akuakultur</option>
+                        <option value="Agribisnis">Agribisnis</option>
+                        <option value="Peternakan">Peternakan</option>
+                    </select>
+
+                    <label>Jenis Surat</label>
+                    <select name="jenis_surat" id="jenis_surat" required onchange="showFormFields()" disabled>
+                        <option value="" disabled selected>-- Pilih Jenis Surat --</option>
+                        <?php foreach($surat_options as $opt): ?>
+                            <option value="<?= htmlspecialchars($opt['nama_surat']) ?>" data-prodi="<?= htmlspecialchars($opt['prodi']) ?>" data-vars="<?= htmlspecialchars($opt['variabel_tambahan']) ?>"><?= htmlspecialchars($opt['nama_surat']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+
+                    <div id="dynamicContainer" class="dynamic-fields"></div>
+
+                    <label>Catatan Tambahan</label>
+                    <textarea name="catatan_user" rows="3" placeholder="Jelaskan kebutuhan Anda secara singkat..."></textarea>
+                    <label>Unggah Berkas Pendukung (PDF/Image)</label>
+                    <input type="file" name="berkas" required style="border:none; padding:10px 0;">
+                    <button type="submit" name="ajukan">Kirim Permohonan</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary)"></i> Riwayat Pengajuan</h3>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <tr>
+                            <th>Layanan</th>
+                            <th>Tanggal</th>
+                            <th>Status</th>
+                            <th>Aksi</th>
+                        </tr>
+                        <?php if(mysqli_num_rows($tampil) == 0): ?>
+                            <tr><td colspan="4" style="text-align:center; padding:30px; color:#aaa;">Belum ada riwayat pengajuan.</td></tr>
+                        <?php endif; ?>
+                        <?php while($row = mysqli_fetch_assoc($tampil)) { ?>
+                        <tr>
+                            <td><span style="font-weight:600; color:#2e3b4e;"><?= htmlspecialchars($row['jenis_surat']); ?></span></td>
+                            <td><?= date('d/m/Y', strtotime($row['tgl_pengajuan'])); ?></td>
+                            <td>
+                                <?php 
+                                    $class = '';
+                                    if($row['status'] == 'Pending') $class = 'bg-pending';
+                                    elseif($row['status'] == 'Diproses') $class = 'bg-proses';
+                                    elseif($row['status'] == 'Selesai') $class = 'bg-selesai';
+                                    elseif($row['status'] == 'Ditolak') $class = 'bg-ditolak';
+                                ?>
+                                <span class="badge <?= $class; ?>"><?= htmlspecialchars($row['status']); ?></span>
+                            </td>
+                            <td>
+                                <?php if($row['status'] == 'Selesai' && !empty($row['surat_jadi'])) { ?>
+                                    <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download"><i class="fa-solid fa-print"></i> Cetak</a>
+                                <?php } else { echo "<span style='color:#ccc; font-size:12px;'>Belum tersedia</span>"; } ?>
+                            </td>
+                        </tr>
+                        <?php } ?>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-    function showFormFields() {
-        const template = document.getElementById('jenis_surat').value;
+    function filterLetters() {
+        const prodi = document.getElementById('filter_prodi').value;
+        const jenisSelect = document.getElementById('jenis_surat');
+        const options = jenisSelect.options;
         const container = document.getElementById('dynamicContainer');
+
+        jenisSelect.disabled = (prodi === "");
+        jenisSelect.value = "";
+        container.style.display = "none";
+        container.innerHTML = "";
+
+        let hasVisible = false;
+        for (let i = 1; i < options.length; i++) {
+            const optionProdi = options[i].getAttribute('data-prodi');
+            if (optionProdi === prodi) {
+                options[i].style.display = 'block';
+                hasVisible = true;
+            } else {
+                options[i].style.display = 'none';
+            }
+        }
+        
+        if(!hasVisible && prodi !== "") alert("Tidak ada jenis surat untuk prodi ini.");
+    }
+
+    function showFormFields() {
+        const select = document.getElementById('jenis_surat');
+        const template = select.value;
+        const container = document.getElementById('dynamicContainer');
+        const selectedOption = select.options[select.selectedIndex];
+        const extraVars = selectedOption.getAttribute('data-vars') || "";
         
         container.innerHTML = "";
         container.style.display = "none";
+        if(template === "") return;
 
-        // Menambahkan Nama dan NIM sebagai field utama yang muncul untuk semua jenis surat
         let fields = `
             <label>Nama Lengkap</label><input type="text" name="var[nama]" value="<?= htmlspecialchars($u_data['nama_lengkap']) ?>" required>
             <label>NIM</label><input type="text" name="var[nim]" value="<?= htmlspecialchars($u_data['nomor_induk']) ?>" required>
         `;
 
-        if(template === "Surat permintaan data awal penelitian") {
-            fields += `
-                <label>Lokasi Penelitian</label><input type="text" name="var[lokasi]" placeholder="Contoh: Kantor Kelurahan..." required>
-                <label>Data yang Diminta</label><textarea name="var[data]" placeholder="Sebutkan data apa saja yang dibutuhkan..." required></textarea>`;
-        } else if(template === "Surat permintaan data hasil penelitian") {
-            fields += `
-                <label>Lokasi Penelitian</label><input type="text" name="var[lokasi]" required>
-                <label>Instansi Tujuan</label><input type="text" name="var[instansi]" placeholder="Contoh: PT. Maju Bersama" required>`;
-        } else if(template === "Permohonan SK pembimbing") {
-            fields += `
-                <label>Judul Skripsi (Tentatif)</label><textarea name="var[judul]" required></textarea>
-                <label>Calon Pembimbing 1</label><input type="text" name="var[p1]" required>
-                <label>Calon Pembimbing 2</label><input type="text" name="var[p2]" required>`;
-        } else if(template === "Permohonan SK ujian proposal") {
-            fields += `
-                <label>Judul Proposal</label><textarea name="var[judul]" required></textarea>
-                <label>Rencana Waktu Ujian</label><input type="text" name="var[waktu]" placeholder="Contoh: Senin, 20 Mei 2024 / 09:00 WIB" required>`;
-        } else if(template === "Permohonan SK ujian seminar hasil") {
-            fields += `
-                <label>Judul Skripsi</label><textarea name="var[judul]" required></textarea>
-                <label>Waktu Seminar</label><input type="text" name="var[waktu]" required>`;
-        } else if(template === "Permohonan SK ujian skripsi") {
-            fields += `
-                <label>Judul Skripsi</label><textarea name="var[judul]" required></textarea>
-                <label>Tanggal Kelulusan Seminar Hasil</label><input type="date" name="var[tgl_lulus]" required>`;
-        } else if(template === "Persetujuan waktu ujian") {
-            fields += `
-                <label>Hari / Tanggal</label><input type="text" name="var[tanggal]" required>
-                <label>Jam</label><input type="text" name="var[jam]" required>
-                <label>Ruangan / Platform (Jika Online)</label><input type="text" name="var[ruangan]" required>`;
-        } else if(template === "Undangan ujian") {
-            fields += `<label>Judul Skripsi / Tugas Akhir</label><textarea name="var[judul]" required></textarea>`;
-        } else if(template === "Transkrip nilai") {
-            fields += `<label>Semester Terakhir</label><input type="number" name="var[semester]" required>`;
-        } else if(template === "Cek Turnitin") {
-            fields += `<label>Judul Dokumen</label><textarea name="var[judul]" required></textarea>`;
+        if (extraVars.trim() !== "") {
+            extraVars.split(',').forEach(v => {
+                let cleanVar = v.replace('${', '').replace('}', '').trim();
+                if (!['nama', 'nim', 'nama_lengkap'].includes(cleanVar)) {
+                    let label = cleanVar.replace(/_/g, ' ').toUpperCase();
+                    fields += `<label>${label}</label><input type="text" name="var[${cleanVar}]" placeholder="Masukkan ${label}..." required>`;
+                }
+            });
         }
 
-        if(template !== "") {
-            container.innerHTML = "<h4 style='margin-top:0; color:#4e73df;'>Lengkapi Data Surat</h4>" + fields;
-            container.style.display = "block";
-        }
+        container.innerHTML = "<h4 style='margin-top:0; color:#4e73df;'>Lengkapi Data Surat</h4>" + fields;
+        container.style.display = "block";
     }
+
+    window.onload = function() {
+        const userProdi = "<?= $u_data['prodi'] ?>";
+        if(userProdi) {
+            document.getElementById('filter_prodi').value = userProdi;
+            filterLetters();
+        }
+    };
     </script>
 </body>
 </html>

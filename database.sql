@@ -53,6 +53,7 @@ INSERT INTO users (username, password, nama_lengkap, role) VALUES
 CREATE TABLE IF NOT EXISTS master_surat_jenis (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nama_surat VARCHAR(255) NOT NULL,
+    prodi VARCHAR(100) DEFAULT 'Umum',
     format_nomor VARCHAR(255) NOT NULL,
     file_template VARCHAR(255) NOT NULL,
     variabel_tambahan TEXT,

@@ -8,7 +8,7 @@ if (!isset($_SESSION['login'])) {
 }
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-$stmt = mysqli_prepare($koneksi, "SELECT p.*, u.nama_lengkap, u.nomor_induk, u.prodi FROM permohonan_surat p JOIN users u ON p.user_id = u.id WHERE p.id = ?");
+$stmt = mysqli_prepare($koneksi, "SELECT p.*, u.nama_lengkap, u.nomor_induk, u.prodi, u.role FROM permohonan_surat p JOIN users u ON p.user_id = u.id WHERE p.id = ?");
 mysqli_stmt_bind_param($stmt, "i", $id);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
@@ -32,17 +32,35 @@ $is_admin = ($_SESSION['role'] === 'admin');
 
 // Logika Konfirmasi oleh Admin untuk mengirim surat ke User
 if (isset($_POST['konfirmasi_kirim']) && $is_admin) {
-    $update_stmt = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET status='Selesai' WHERE id=?");
-    mysqli_stmt_bind_param($update_stmt, "i", $id);
-    
-    if (mysqli_stmt_execute($update_stmt)) {
-        $pesan_notif = "Surat/SK '" . $data['jenis_surat'] . "' telah tersedia dan dapat diunduh di dashboard Anda.";
-        $stmt_n = mysqli_prepare($koneksi, "INSERT INTO notifikasi (user_id, pesan) VALUES (?, ?)");
-        mysqli_stmt_bind_param($stmt_n, "is", $data['user_id'], $pesan_notif);
-        mysqli_stmt_execute($stmt_n);
+    if (isset($_FILES['file_ttd']) && $_FILES['file_ttd']['error'] == 0) {
+        $berkas = $_FILES['file_ttd']['name'];
+        $tmp_name = $_FILES['file_ttd']['tmp_name'];
+        $ext = strtolower(pathinfo($berkas, PATHINFO_EXTENSION));
+        $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
 
-        echo "<script>alert('Surat berhasil dikonfirmasi dan dikirim ke User!'); window.location='dashboard_admin.php';</script>";
-        exit;
+        if (!in_array($ext, $allowed)) {
+            echo "<script>alert('Format file tidak diizinkan! (PDF/DOCX/JPG/PNG)');</script>";
+        } else {
+            $berkas_baru = "SIGNED_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
+            if (!is_dir('uploads')) mkdir('uploads', 0777, true);
+
+            if (move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
+                $update_stmt = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET status='Selesai', surat_jadi=? WHERE id=?");
+                mysqli_stmt_bind_param($update_stmt, "si", $berkas_baru, $id);
+                
+                if (mysqli_stmt_execute($update_stmt)) {
+                    $pesan_notif = "Surat/SK '" . $data['jenis_surat'] . "' yang telah ditandatangani kini tersedia di dashboard Anda.";
+                    $stmt_n = mysqli_prepare($koneksi, "INSERT INTO notifikasi (user_id, pesan) VALUES (?, ?)");
+                    mysqli_stmt_bind_param($stmt_n, "is", $data['user_id'], $pesan_notif);
+                    mysqli_stmt_execute($stmt_n);
+
+                    echo "<script>alert('Surat berhasil diunggah dan dikirim ke User!'); window.location='dashboard_admin.php';</script>";
+                    exit;
+                }
+            }
+        }
+    } else {
+        echo "<script>alert('Gagal mengunggah berkas tanda tangan. Pastikan file terpilih.');</script>";
     }
 }
 
@@ -79,7 +97,7 @@ $docx_template = '';
 // Ambil template dari database berdasarkan jenis surat (Gunakan LIKE untuk toleransi spasi/karakter)
 $nama_surat_clean = trim($data['jenis_surat']);
 $stmt_tmpl = mysqli_prepare($koneksi, "SELECT file_template FROM master_surat_jenis WHERE nama_surat = ? OR nama_surat LIKE ? LIMIT 1");
-$search_param = "%$nama_surat_clean%";
+$search_param = "%" . $nama_surat_clean . "%";
 mysqli_stmt_bind_param($stmt_tmpl, "ss", $nama_surat_clean, $search_param);
 mysqli_stmt_execute($stmt_tmpl);
 $res_tmpl = mysqli_stmt_get_result($stmt_tmpl);
@@ -87,14 +105,14 @@ if ($row_tmpl = mysqli_fetch_assoc($res_tmpl)) {
     $docx_template = 'templates/' . $row_tmpl['file_template'];
 }
 
-if (!empty($docx_template) && file_exists($docx_template)) {
+if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
     // --- CASE 1: MENGGUNAKAN TEMPLATE DOCX ---
     $templateProcessor = new \PhpOffice\PhpWord\TemplateProcessor($docx_template);
 
     // Isi variabel template secara otomatis dari data_surat
     foreach ($vars as $key => $val) {
         // Khusus untuk NIM/ID Number agar kompatibel dengan berbagai key
-        if ($key == 'id_number' || $key == 'nim') {
+        if ($key === 'id_number' || $key === 'nim') {
             $templateProcessor->setValue('nim', htmlspecialchars(strip_tags($val)));
             $templateProcessor->setValue('id_number', htmlspecialchars(strip_tags($val)));
         }
@@ -132,15 +150,16 @@ if (!empty($docx_template) && file_exists($docx_template)) {
         <body>
             <div class="container">
                 <h3>Pratinjau Surat: <?= htmlspecialchars($data['jenis_surat']) ?></h3>
-                <p>Surat telah berhasil digenerate. Silakan periksa dan unduh.</p>
+                <p>Surat draf berhasil digenerate. Silakan unduh untuk ditandatangani, lalu unggah kembali versi finalnya.</p>
                 <a href="<?= htmlspecialchars($generated_file_path) ?>" class="btn-action btn-download" download="<?= htmlspecialchars($base_filename) ?>">⬇ Unduh DOCX</a>
                 
-                <form method="POST" style="display:inline;">
-                    <button type="submit" name="konfirmasi_kirim" class="btn-action btn-download" style="border:none; cursor:pointer; background:#2ecc71;">✅ Konfirmasi & Kirim ke User</button>
+                <form method="POST" enctype="multipart/form-data" style="margin-top: 20px; border: 1px dashed #ccc; padding: 20px; border-radius: 8px;">
+                    <label style="display:block; margin-bottom:10px; font-weight:bold;">Unggah Surat Final (Tanda Tangan/PDF):</label>
+                    <input type="file" name="file_ttd" accept=".pdf,.docx,.jpg,.png" required style="margin-bottom:15px; border: 1px solid #ddd; padding: 8px; width: 100%; box-sizing: border-box;">
+                    <button type="submit" name="konfirmasi_kirim" class="btn-action btn-download" style="border:none; cursor:pointer; background:#2ecc71; width: 100%;">✅ Unggah & Kirim ke User</button>
                 </form>
 
-                <!-- Perbaikan: Mengubah $data['role'] menjadi $_SESSION['role'] -->
-                <a href="admin_kirim_surat.php?id_permohonan=<?= $id ?>&user_id=<?= $data['user_id']; ?>&role=<?= $_SESSION['role']; ?>&jenis=<?= urlencode($data['jenis_surat']); ?>" class="btn-action btn-edit">✎ Edit Variabel</a>
+                <a href="admin_kirim_surat.php?id_permohonan=<?= $id ?>&user_id=<?= $data['user_id']; ?>&role=<?= $data['role']; ?>&jenis=<?= urlencode($data['jenis_surat']); ?>" class="btn-action btn-edit">✎ Edit Variabel</a>
                 <br><br>
                 <a href="javascript:history.back()" style="color: #95a5a6; font-size: 12px;">← Kembali</a>
             </div>

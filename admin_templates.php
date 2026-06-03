@@ -5,15 +5,17 @@ if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin') {
     exit;
 }
 
-$template_dir = 'rtf/';
+$template_dir = 'templates/';
 if (!is_dir($template_dir)) {
     mkdir($template_dir, 0777, true);
 }
 
-// Daftar template yang dikelola (sesuaikan dengan mapping di cetak_surat.php)
-$managed_templates = [
-    ['jenis' => 'Permohonan SK ujian proposal', 'file' => 'sk_proposal_si.docx']
-];
+// Ambil daftar template langsung dari database agar dinamis
+$managed_templates = [];
+$db_templates = mysqli_query($koneksi, "SELECT nama_surat as jenis, file_template as file FROM master_surat_jenis");
+while($row_t = mysqli_fetch_assoc($db_templates)) {
+    $managed_templates[] = $row_t;
+}
 
 // Proses Unggah Ganti Template (Langkah 3)
 if (isset($_POST['upload_template'])) {

@@ -52,8 +52,11 @@ if (isset($_POST['login'])) {
 </head>
 <body>
 <div class="login-box">
-    <h3>Layanan E-Surat<h3>
-    <h3>Fakultas Sains dan Ilmu Komputer</h3>
+    <div style="text-align: center; margin-bottom: 20px;">
+        <img src="logo/logo.png" alt="Logo" style="max-height: 160px;">
+    </div>
+    <h3 style="margin-bottom: 0;">Layanan E-Surat</h3>
+    <h3 style="margin-top: 5px;">Fakultas Sains dan Ilmu Komputer</h3>
     <?php if(isset($error)) echo "<div class='error-msg'>Username atau Password salah!</div>"; ?>
     <form method="POST" action="">
         <input type="text" name="username" placeholder="Username" required>

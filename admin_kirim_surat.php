@@ -37,7 +37,7 @@ if (isset($_POST['kirim_surat'])) {
 }
 
 // Ambil semua user non-admin
-$users_res = mysqli_query($koneksi, "SELECT id, nama_lengkap, role, nomor_induk FROM users WHERE role != 'admin' ORDER BY nama_lengkap ASC"); // Line 29
+$users_res = mysqli_query($koneksi, "SELECT id, nama_lengkap, role, nomor_induk, prodi FROM users WHERE role != 'admin' ORDER BY nama_lengkap ASC");
 $all_users = [];
 // Check if the query was successful
 if ($users_res) {
@@ -51,7 +51,7 @@ if ($users_res) {
 }
 
 // Ambil daftar jenis surat dari master untuk dropdown
-$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan FROM master_surat_jenis ORDER BY nama_surat ASC");
+$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan, prodi FROM master_surat_jenis ORDER BY nama_surat ASC");
 $master_surat_list = [];
 while($ms = mysqli_fetch_assoc($master_surat_query)) {
     $master_surat_list[] = $ms;
@@ -109,10 +109,27 @@ if (isset($_GET['id_permohonan'])) {
                 </select>
             </div>
 
+            <div class="form-group" id="prodi_filter_group" style="display:none;">
+                <label>Filter Berdasarkan Program Studi / Kategori</label>
+                <select id="filter_prodi" onchange="filterTemplates()">
+                    <option value="">-- Semua Prodi --</option>
+                    <option value="Umum">Umum</option>
+                    <option value="Dosen">Dosen</option>
+                    <option value="Sistem Informasi">Sistem Informasi</option>
+                    <option value="Geografi">Geografi</option>
+                    <option value="Ilmu Komputer">Ilmu Komputer</option>
+                    <option value="Bisnis Digital">Bisnis Digital</option>
+                    <option value="Teknik Sipil">Teknik Sipil</option>
+                    <option value="Akuakultur">Akuakultur</option>
+                    <option value="Agribisnis">Agribisnis</option>
+                    <option value="Peternakan">Peternakan</option>
+                </select>
+            </div>
+
             <!-- Langkah 2: Pilih Nama (Muncul setelah kategori dipilih) -->
             <div class="form-group">
                 <label>Pilih Nama Penerima</label>
-                <select name="recipient_id" id="recipient" required onchange="showFields()" disabled>
+                <select name="recipient_id" id="recipient" required onchange="handleRecipientChange()" disabled>
                     <option value="">-- Pilih Nama --</option>
                 </select>
             </div>
@@ -123,7 +140,7 @@ if (isset($_GET['id_permohonan'])) {
                 <select name="jenis_surat" id="templateSelect" required onchange="showFields()" disabled>
                     <option value="">-- Pilih Penerima Terlebih Dahulu --</option>
                     <?php foreach($master_surat_list as $ms): ?>
-                        <option value="<?= htmlspecialchars($ms['nama_surat']) ?>" data-vars="<?= htmlspecialchars($ms['variabel_tambahan']) ?>"><?= htmlspecialchars($ms['nama_surat']) ?></option>
+                        <option value="<?= htmlspecialchars($ms['nama_surat']) ?>" data-prodi="<?= htmlspecialchars($ms['prodi']) ?>" data-vars="<?= htmlspecialchars($ms['variabel_tambahan']) ?>"><?= htmlspecialchars($ms['nama_surat']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -146,7 +163,16 @@ if (isset($_GET['id_permohonan'])) {
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.has('id_permohonan')) {
                 updateUserAndTemplate();
-                document.getElementById('recipient').value = urlParams.get('user_id');
+                const userId = urlParams.get('user_id');
+                document.getElementById('recipient').value = userId;
+                
+                // Otomatis filter prodi berdasarkan data user yang sedang diproses
+                const user = usersData.find(u => u.id == userId);
+                if (user && user.prodi) {
+                    document.getElementById('filter_prodi').value = user.prodi;
+                    filterTemplates();
+                }
+
                 document.getElementById('templateSelect').value = urlParams.get('jenis');
                 showFields();
             }
@@ -156,8 +182,11 @@ if (isset($_GET['id_permohonan'])) {
             const kategori = document.getElementById('kategori_peran').value;
             const recipientSelect = document.getElementById('recipient');
             const templateSelect = document.getElementById('templateSelect');
-            const optMhs = document.getElementById('optMhs');
-            const optDosen = document.getElementById('optDosen');
+            const prodiGroup = document.getElementById('prodi_filter_group');
+            const prodiFilter = document.getElementById('filter_prodi');
+
+            prodiGroup.style.display = kategori ? 'block' : 'none';
+            prodiFilter.value = kategori === 'dosen' ? 'Dosen' : '';
 
             // Reset & Filter Penerima (Mahasiswa/Dosen)
             recipientSelect.innerHTML = '<option value="">-- Pilih Nama --</option>';
@@ -169,6 +198,7 @@ if (isset($_GET['id_permohonan'])) {
                     opt.text = u.nama_lengkap + (u.nomor_induk ? " (" + u.nomor_induk + ")" : "");
                     opt.dataset.nama = u.nama_lengkap;
                     opt.dataset.id = u.nomor_induk;
+                    opt.dataset.prodi = u.prodi || "";
                     recipientSelect.add(opt);
                 });
             } else {
@@ -176,21 +206,44 @@ if (isset($_GET['id_permohonan'])) {
             }
 
             // Filter Template
-            templateSelect.disabled = true;
-            templateSelect.selectedIndex = 0;
-            optMhs.style.display = 'none';
-            optDosen.style.display = 'none';
+            templateSelect.disabled = !kategori;
+            filterTemplates();
+        }
 
-            if (kategori === 'mahasiswa') {
-                optMhs.style.display = 'block';
-                templateSelect.disabled = false;
-                templateSelect.options[0].text = "-- Pilih Jenis Surat --";
-            } else if (kategori === 'dosen') {
-                optDosen.style.display = 'block';
-                templateSelect.disabled = false;
-                templateSelect.options[0].text = "-- Pilih Jenis Surat --";
+        function handleRecipientChange() {
+            const recipientSelect = document.getElementById('recipient');
+            const selectedOpt = recipientSelect.selectedOptions[0];
+            const filterProdi = document.getElementById('filter_prodi');
+            
+            // Jika user memiliki data prodi (biasanya mahasiswa), otomatis arahkan filter prodi
+            if (selectedOpt && selectedOpt.dataset.prodi) {
+                filterProdi.value = selectedOpt.dataset.prodi;
+                filterTemplates();
             }
+            showFields();
+        }
 
+        function filterTemplates() {
+            const prodi = document.getElementById('filter_prodi').value;
+            const templateSelect = document.getElementById('templateSelect');
+            const options = templateSelect.options;
+            const kategori = document.getElementById('kategori_peran').value;
+
+            templateSelect.value = "";
+            
+            for (let i = 1; i < options.length; i++) {
+                const itemProdi = options[i].getAttribute('data-prodi');
+                
+                let isMatch = false;
+                if (!prodi) {
+                    // Jika filter prodi kosong, tampilkan sesuai kategori
+                    isMatch = (kategori === 'dosen') ? (itemProdi === 'Dosen') : (itemProdi !== 'Dosen');
+                } else {
+                    isMatch = (itemProdi === prodi);
+                }
+                
+                options[i].style.display = isMatch ? 'block' : 'none';
+            }
             document.getElementById('dynamicContainer').style.display = "none";
         }
 

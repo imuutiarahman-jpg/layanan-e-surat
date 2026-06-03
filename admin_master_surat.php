@@ -26,7 +26,28 @@ function time_ago($timestamp) {
     else return "$years tahun lalu";
 }
 
-$query = mysqli_query($koneksi, "SELECT * FROM master_surat_jenis ORDER BY id ASC");
+$view = isset($_GET['view']) ? $_GET['view'] : 'mahasiswa';
+$prodi_active = isset($_GET['prodi']) ? $_GET['prodi'] : 'Umum';
+$list_prodi = ['Umum', 'Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
+$full_list_prodi = array_merge($list_prodi, ['Dosen']);
+
+$sql = "SELECT * FROM master_surat_jenis";
+if ($view == 'dosen') {
+    $sql .= " WHERE prodi = 'Dosen'";
+} else {
+    if ($prodi_active != 'Semua') {
+        $safe_prodi = mysqli_real_escape_string($koneksi, $prodi_active);
+        $sql .= " WHERE prodi = '$safe_prodi'";
+    } else {
+        $sql .= " WHERE prodi != 'Dosen'";
+    }
+}
+$sql .= " ORDER BY id ASC";
+$query = mysqli_query($koneksi, $sql);
+
+if (!$query) {
+    die("Kesalahan Database: " . mysqli_error($koneksi) . ". Jika tabel hilang, silakan jalankan script SQL untuk tabel 'master_surat_jenis'.");
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -41,13 +62,23 @@ $query = mysqli_query($koneksi, "SELECT * FROM master_surat_jenis ORDER BY id AS
         .table thead th { background-color: #f1f4f8; color: #495057; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; border: none; }
         .badge-variable { font-size: 0.7rem; font-weight: 500; margin-right: 3px; }
         .btn-stack .btn { display: block; width: 100%; margin-bottom: 5px; font-size: 0.8rem; font-weight: 600; text-align: left; }
+        .nav-tabs { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #edf2f7; padding-bottom: 10px; }
+        .tab-links { display: flex; gap: 10px; }
+        .tab-links a { padding: 10px 20px; text-decoration: none; color: #718096; border-radius: 8px; font-weight: 600; transition: 0.3s; font-size: 14px; }
+        .tab-links a.active { background: #667eea; color: white; }
+        .prodi-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 25px; }
+        .prodi-filter a { font-size: 12px; padding: 6px 12px; background: #ebedf0; color: #4a5568; text-decoration: none; border-radius: 5px; }
+        .prodi-filter a.active { background: #4a5568; color: white; }
     </style>
 </head>
 <body>
 
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
-        <span class="navbar-brand">E-Surat Admin</span>
+        <a href="dashboard_admin.php" class="navbar-brand d-flex align-items-center">
+            <img src="logo/logo.png" alt="Logo" width="80" height="80" class="d-inline-block me-2">
+            E-Surat Admin
+        </a>
         <a href="dashboard_admin.php" class="btn btn-outline-light btn-sm">Kembali</a>
     </div>
 </nav>
@@ -58,6 +89,22 @@ $query = mysqli_query($koneksi, "SELECT * FROM master_surat_jenis ORDER BY id AS
         <!-- PERBAIKAN: Menambahkan trigger modal Bootstrap -->
         <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#tambahModal">+ Tambah Jenis Surat</button>
     </div>
+
+    <div class="nav-tabs">
+        <div class="tab-links">
+            <a href="admin_master_surat.php?view=mahasiswa" class="<?= $view=='mahasiswa'?'active':'' ?>">Manajemen Mahasiswa</a>
+            <a href="admin_master_surat.php?view=dosen" class="<?= $view=='dosen'?'active':'' ?>">Manajemen Dosen</a>
+        </div>
+    </div>
+
+    <?php if($view == 'mahasiswa'): ?>
+    <div class="prodi-filter">
+        <a href="admin_master_surat.php?view=mahasiswa&prodi=Semua" class="<?= $prodi_active=='Semua'?'active':'' ?>">Semua Prodi</a>
+        <?php foreach($list_prodi as $p): ?>
+            <a href="admin_master_surat.php?view=mahasiswa&prodi=<?= urlencode($p) ?>" class="<?= $prodi_active==$p?'active':'' ?>"><?= $p ?></a>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
 
     <div class="card p-3">
         <div class="table-responsive">
@@ -72,7 +119,7 @@ $query = mysqli_query($koneksi, "SELECT * FROM master_surat_jenis ORDER BY id AS
                     </tr>
                 </thead>
                 <tbody>
-                    <?php $no=1; while($row = mysqli_fetch_assoc($query)): ?>
+                    <?php $no=1; if ($query) while($row = mysqli_fetch_assoc($query)): ?>
                     <tr>
                         <td><?= $no++; ?></td>
                         <td>
@@ -132,6 +179,15 @@ $query = mysqli_query($koneksi, "SELECT * FROM master_surat_jenis ORDER BY id AS
                         <input type="text" name="nama_surat" class="form-control" required placeholder="Contoh: Surat Keterangan Aktif Kuliah">
                     </div>
                     
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Kategori / Prodi</label>
+                        <select name="prodi" class="form-select" required>
+                            <?php foreach($full_list_prodi as $p): ?>
+                                <option value="<?= $p ?>" <?= ($view == 'dosen' && $p == 'Dosen') || ($prodi_active == $p) ? 'selected' : '' ?>><?= $p ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label fw-bold">Variabel Tambahan (Opsional)</label>
                         <input type="text" name="variabel_tambahan" class="form-control" placeholder="Contoh: ${instansi}, ${keperluan}">
