@@ -169,11 +169,11 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
                     </td>
                     <td>
                         <?php if($row['status'] == 'Selesai' && !empty($row['surat_jadi'])) { ?>
-                            <?php if($row['surat_jadi'] == 'SYSTEM_GENERATED') { ?>
-                                <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-view">Lihat / Cetak</a>
-                            <?php } else { ?>
-                                <a href="uploads/<?= htmlspecialchars($row['surat_jadi']); ?>" target="_blank" class="btn-view">Buka File</a>
-                            <?php } ?>
+                            <!-- Tombol Lihat: Menampilkan halaman review variabel atau pratinjau inline -->
+                            <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-view" style="color: #3498db;">👁 Lihat</a>
+                            
+                            <!-- Tombol Cetak: Memaksa unduhan file -->
+                            <a href="cetak_surat.php?id=<?= $row['id']; ?>&download=1" class="btn-view" style="color: #2ecc71; margin-left:10px;">📥 Cetak</a>
                         <?php } else { ?>
                             <small style="color: #a0aec0;">-</small>
                         <?php } ?>

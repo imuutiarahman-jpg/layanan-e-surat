@@ -3,7 +3,7 @@
         'name' => 'layanan/e-surat',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '7da0233adbf8af4910f3d556de33d4ad4f580ff4',
+        'reference' => 'a8dd71e62f0bd945fe00d1fb9ff578494fffe691',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -40,7 +40,7 @@
         'layanan/e-surat' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '7da0233adbf8af4910f3d556de33d4ad4f580ff4',
+            'reference' => 'a8dd71e62f0bd945fe00d1fb9ff578494fffe691',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

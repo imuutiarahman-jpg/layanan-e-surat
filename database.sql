@@ -48,3 +48,19 @@ INSERT INTO users (username, password, nama_lengkap, role) VALUES
 ('admin', '$2y$10$hKDVYxLefVHV/vtuPhWD3OigtRyOykRLDdU.L.v2n.4fV6NLRN952', 'Administrator', 'admin'),
 ('mahasiswa', '$2y$10$hKDVYxLefVHV/vtuPhWD3OigtRyOykRLDdU.L.v2n.4fV6NLRN952', 'Mahasiswa User', 'mahasiswa'),
 ('dosen', '$2y$10$hKDVYxLefVHV/vtuPhWD3OigtRyOykRLDdU.L.v2n.4fV6NLRN952', 'Dosen User', 'dosen');
+
+-- Tabel Manajemen Jenis Surat & Template
+CREATE TABLE IF NOT EXISTS master_surat_jenis (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nama_surat VARCHAR(255) NOT NULL,
+    format_nomor VARCHAR(255) NOT NULL,
+    file_template VARCHAR(255) NOT NULL,
+    variabel_tambahan TEXT,
+    updated_by VARCHAR(100),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Data Awal Contoh (Pastikan file .docx tersedia di folder templates/)
+INSERT INTO master_surat_jenis (nama_surat, format_nomor, file_template, variabel_tambahan, updated_by) 
+VALUES ('Permohonan SK ujian proposal', '{no}/FPSI-UMGO/SK-PROP/{yyyy}', 'template_permohonan_sk_ujian_proposal.docx', '${waktu},${penguji}', 'admin'),
+       ('Keterangan Aktif Kuliah', '{no}/FPSI-UMGO/KET.AK/{yyyy}', 'template_keterangan_aktif_kuliah.docx', '${ta}', 'admin');

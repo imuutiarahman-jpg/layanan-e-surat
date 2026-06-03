@@ -17,24 +17,19 @@ if (isset($_POST['kirim_surat'])) {
 
     if (!empty($id_permohonan)) {
         // Jika memproses permohonan yang sudah ada (UPDATE)
-        $stmt = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET jenis_surat=?, status='Selesai', surat_jadi=?, data_surat=? WHERE id=?");
+        $stmt = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET jenis_surat=?, status='Diproses', surat_jadi=?, data_surat=? WHERE id=?");
         mysqli_stmt_bind_param($stmt, "sssi", $jenis, $surat_final, $data_json, $id_permohonan);
     } else {
         // Jika membuat surat baru tanpa permohonan sebelumnya (INSERT)
-        $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, status, surat_jadi, data_surat) VALUES (?, ?, 'Selesai', ?, ?)");
+        $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, status, surat_jadi, data_surat) VALUES (?, ?, 'Diproses', ?, ?)");
         mysqli_stmt_bind_param($stmt, "isss", $user_id, $jenis, $surat_final, $data_json);
     }
     
     if ($stmt) {
         if (mysqli_stmt_execute($stmt)) {
-            $pesan_notif = "Surat/SK baru '$jenis' telah tersedia untuk Anda.";
-            $stmt_n = mysqli_prepare($koneksi, "INSERT INTO notifikasi (user_id, pesan) VALUES (?, ?)");
-            if ($stmt_n) {
-                mysqli_stmt_bind_param($stmt_n, "is", $user_id, $pesan_notif);
-                mysqli_stmt_execute($stmt_n);
-            }
-            
-            echo "<script>alert('Surat berhasil dikirim ke User!'); window.location='dashboard_admin.php';</script>";
+            $id_final = !empty($id_permohonan) ? $id_permohonan : mysqli_insert_id($koneksi);
+            header("Location: cetak_surat.php?id=$id_final");
+            exit;
         }
     } else {
         die("Gagal menyiapkan query (mysqli_prepare). Pastikan kolom 'data_surat' sudah ada di tabel 'permohonan_surat'. Error: " . mysqli_error($koneksi));
@@ -53,6 +48,13 @@ if ($users_res) {
     // Handle the error gracefully
     echo "<script>alert('Terjadi kesalahan saat mengambil data pengguna dari database. Pastikan kolom nomor_induk ada di tabel users. Error: " . mysqli_error($koneksi) . "'); window.location='dashboard_admin.php';</script>";
     exit;
+}
+
+// Ambil daftar jenis surat dari master untuk dropdown
+$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan FROM master_surat_jenis ORDER BY nama_surat ASC");
+$master_surat_list = [];
+while($ms = mysqli_fetch_assoc($master_surat_query)) {
+    $master_surat_list[] = $ms;
 }
 
 // Ambil data permohonan jika ada ID untuk pre-fill field (Insightful addition)
@@ -120,24 +122,9 @@ if (isset($_GET['id_permohonan'])) {
                 <label>Pilih Jenis Surat</label>
                 <select name="jenis_surat" id="templateSelect" required onchange="showFields()" disabled>
                     <option value="">-- Pilih Penerima Terlebih Dahulu --</option>
-                    <!-- Optgroups will be filtered by JS -->
-                    <optgroup label="Kategori A: Mahasiswa" id="optMhs" style="display:none;">
-                        <option value="Surat permintaan data awal penelitian">1. Data Awal Penelitian</option>
-                        <option value="Surat permintaan data hasil penelitian">2. Data Hasil Penelitian</option>
-                        <option value="Permohonan SK pembimbing">3. Permohonan SK Pembimbing</option>
-                        <option value="Permohonan SK ujian proposal">4. Permohonan SK Ujian Proposal</option>
-                        <option value="Permohonan SK ujian seminar hasil">5. Permohonan SK Ujian Seminar Hasil</option>
-                        <option value="Permohonan SK ujian skripsi">6. Permohonan SK Ujian Skripsi</option>
-                        <option value="Persetujuan waktu ujian">7. Persetujuan Waktu Ujian</option>
-                        <option value="Undangan ujian">8. Undangan Ujian</option>
-                        <option value="Transkrip nilai">9. Transkrip Nilai</option>
-                        <option value="Cek Turnitin">10. Cek Turnitin</option>
-                    </optgroup>
-                    <optgroup label="Kategori B: Dosen" id="optDosen" style="display:none;">
-                        <option value="Permohonan surat tugas">1. Surat Tugas</option>
-                        <option value="Surat rekomendasi penelitian">2. Surat Rekomendasi Penelitian</option>
-                        <option value="Permintaan data penelitian">3. Permintaan Data Penelitian</option>
-                    </optgroup>
+                    <?php foreach($master_surat_list as $ms): ?>
+                        <option value="<?= htmlspecialchars($ms['nama_surat']) ?>" data-vars="<?= htmlspecialchars($ms['variabel_tambahan']) ?>"><?= htmlspecialchars($ms['nama_surat']) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
 
@@ -146,7 +133,7 @@ if (isset($_GET['id_permohonan'])) {
                 <div id="fieldsBody"></div>
             </div>
 
-            <button type="submit" name="kirim_surat">Kirim Surat ke Dashboard User</button>
+            <button type="submit" name="kirim_surat">Generate & Review Surat</button>
         </form>
     </div>
 
@@ -208,83 +195,44 @@ if (isset($_GET['id_permohonan'])) {
         }
 
         function showFields() {
-            const template = document.getElementById('templateSelect').value;
+            const select = document.getElementById('templateSelect');
+            const template = select.value;
             const container = document.getElementById('dynamicContainer');
             const body = document.getElementById('fieldsBody');
             const userOpt = document.getElementById('recipient').selectedOptions[0];
+            const extraVars = select.options[select.selectedIndex].getAttribute('data-vars') || "";
             
             if(!template) { container.style.display = "none"; return; }
             container.style.display = "block";
             body.innerHTML = "";
 
-            // Auto-fill Data
             const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-
-            // Fungsi pembantu untuk mengambil nilai lama jika ada
             const getVal = (key, def = '') => (existingVars && existingVars[key]) ? existingVars[key] : def;
 
-            let commonFields = `
+            let fields = `
                 <label>Nama Lengkap</label><input type="text" name="var[nama]" value="${getVal('nama', userOpt.dataset.nama)}" required>
                 <label>NIM / NIDN</label><input type="text" name="var[id_number]" value="${getVal('nim', userOpt.dataset.id || '')}" required>
                 <label>Nomor Surat SK</label><input type="text" name="var[nomor_surat]" value="${getVal('nomor_surat')}" placeholder="Contoh: 153/FSIK-UMGO/KEP/V/2026" required>
-                <label>Tahun Akademik</label><input type="text" name="var[ta]" value="${getVal('ta')}" placeholder="Contoh: 2025/2026" required>
                 <label>Tanggal Surat (Muncul di Footer)</label><input type="text" name="var[tanggal_surat]" value="${getVal('tanggal_surat', today)}" required>
             `;
 
-            let specificFields = "";
-            if(template === "Surat permintaan data awal penelitian") {
-                specificFields = `
-                    <label>Lokasi Penelitian</label><input type="text" name="var[lokasi]" value="${getVal('lokasi')}" required>
-                    <label>Data yang Diminta</label><textarea name="var[data]" class="summernote" required>${getVal('data')}</textarea>`;
-            } else if(template === "Surat permintaan data hasil penelitian") {
-                specificFields = `
-                    <label>Lokasi Penelitian</label><input type="text" name="var[lokasi]" value="${getVal('lokasi')}" required>
-                    <label>Instansi Tujuan</label><input type="text" name="var[instansi]" value="${getVal('instansi')}" required>`;
-            } else if(template.includes("SK pembimbing")) {
-                specificFields = `
-                    <label>Judul Skripsi</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
-                    <label>Nama Pembimbing 1</label><input type="text" name="var[p1]" value="${getVal('p1')}" required>
-                    <label>Nama Pembimbing 2</label><input type="text" name="var[p2]" value="${getVal('p2')}" required>`;
-            } else if(template === "Permohonan SK ujian proposal") {
-                specificFields = `
-                    <label>Judul Proposal</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
-                    <label>Hari / Tanggal / Waktu</label><input type="text" name="var[waktu]" value="${getVal('waktu')}" placeholder="Contoh: Senin, 20 Mei 2024 / 09:00 WIB" required>
-                    <label>Nama Penguji</label><textarea name="var[penguji]" class="summernote" required>${getVal('penguji')}</textarea>`;
-            } else if(template === "Permohonan SK ujian seminar hasil") {
-                specificFields = `
-                    <label>Judul Skripsi</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
-                    <label>Catatan Kelayakan</label><textarea name="var[catatan]" class="summernote" required>${getVal('catatan')}</textarea>`;
-            } else if(template === "Permohonan SK ujian skripsi") {
-                specificFields = `
-                    <label>Judul Skripsi</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
-                    <label>Tanggal Kelulusan Syarat</label><input type="date" name="var[tgl_lulus]" value="${getVal('tgl_lulus')}" required>`;
-            } else if(template === "Persetujuan waktu ujian") {
-                specificFields = `
-                    <label>Hari / Tanggal</label><input type="text" name="var[tanggal]" value="${getVal('tanggal')}" required>
-                    <label>Jam</label><input type="text" name="var[jam]" value="${getVal('jam')}" required>
-                    <label>Ruangan</label><input type="text" name="var[ruangan]" value="${getVal('ruangan')}" required>`;
-            } else if(template === "Undangan ujian") {
-                specificFields = `
-                    <label>Judul Skripsi / Tugas Akhir</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>`;
-            } else if(template.includes("surat tugas")) {
-                specificFields = `
-                    <label>Nama Kegiatan</label><input type="text" name="var[kegiatan]" value="${getVal('kegiatan')}" required>
-                    <label>Lokasi</label><input type="text" name="var[lokasi]" value="${getVal('lokasi')}" required>
-                    <label>Durasi Tugas</label><input type="text" name="var[durasi]" value="${getVal('durasi')}" required>`;
-            } else if(template === "Surat rekomendasi penelitian") {
-                specificFields = `
-                    <label>Judul Penelitian</label><textarea name="var[judul]" class="summernote" required>${getVal('judul')}</textarea>
-                    <label>Pihak Pemberi Rekomendasi</label><input type="text" name="var[pemberi]" value="${getVal('pemberi')}" required>`;
-            } else if(template === "Permintaan data penelitian") {
-                specificFields = `
-                    <label>Topik Riset</label><input type="text" name="var[topik]" value="${getVal('topik')}" required>
-                    <label>Sumber Data yang Dituju</label><input type="text" name="var[sumber]" value="${getVal('sumber')}" required>`;
-            } else {
-                // Default fallback fields
-                specificFields = `<label>Catatan/Isi Spesifik</label><textarea name="var[catatan]" class="summernote">${getVal('catatan')}</textarea>`;
+            if (extraVars.trim() !== "") {
+                extraVars.split(',').forEach(v => {
+                    let cleanVar = v.replace('${', '').replace('}', '').trim();
+                    const skip = ['nama', 'nim', 'id_number', 'nama_lengkap', 'nomor_surat', 'tanggal_surat'];
+                    if (!skip.includes(cleanVar)) {
+                        let label = cleanVar.replace(/_/g, ' ').toUpperCase();
+                        // Gunakan textarea jika variabel mengandung kata 'judul', 'catatan', atau 'data'
+                        if (['judul', 'catatan', 'data', 'penguji'].some(k => cleanVar.includes(k))) {
+                            fields += `<label>${label}</label><textarea name="var[${cleanVar}]" class="summernote" required>${getVal(cleanVar)}</textarea>`;
+                        } else {
+                            fields += `<label>${label}</label><input type="text" name="var[${cleanVar}]" value="${getVal(cleanVar)}" placeholder="Masukkan ${label}..." required>`;
+                        }
+                    }
+                });
             }
 
-            body.innerHTML = commonFields + specificFields;
+            body.innerHTML = fields;
 
             // Inisialisasi Summernote pada semua textarea dengan class .summernote
             $('.summernote').summernote({

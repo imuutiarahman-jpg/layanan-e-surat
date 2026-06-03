@@ -47,6 +47,11 @@ $stmt_tampil = mysqli_prepare($koneksi, "SELECT * FROM permohonan_surat WHERE us
 mysqli_stmt_bind_param($stmt_tampil, "i", $user_id);
 mysqli_stmt_execute($stmt_tampil);
 $tampil = mysqli_stmt_get_result($stmt_tampil);
+
+// Ambil daftar jenis surat dari master untuk dropdown
+$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan FROM master_surat_jenis ORDER BY nama_surat ASC");
+$surat_options = [];
+while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt; }
 ?>
 <!DOCTYPE html>
 <html>
@@ -106,16 +111,9 @@ $tampil = mysqli_stmt_get_result($stmt_tampil);
                 <label>Jenis Surat</label>
                 <select name="jenis_surat" id="jenis_surat" required onchange="showFormFields()">
                     <option value="" disabled selected>-- Pilih Jenis Surat --</option>
-                    <option value="Surat permintaan data awal penelitian">Surat permintaan data awal penelitian</option>
-                    <option value="Surat permintaan data hasil penelitian">Surat permintaan data hasil penelitian</option>
-                    <option value="Permohonan SK pembimbing">Permohonan SK pembimbing</option>
-                    <option value="Permohonan SK ujian proposal">Permohonan SK Ujian Seminar Proposal</option>
-                    <option value="Permohonan SK ujian seminar hasil">Permohonan SK Ujian Seminar Hasil</option>
-                    <option value="Permohonan SK ujian skripsi">Permohonan SK Ujian Skripsi</option>
-                    <option value="Persetujuan waktu ujian">Persetujuan waktu ujian</option>
-                    <option value="Undangan ujian">Undangan ujian</option>
-                    <option value="Transkrip nilai">Transkrip nilai</option>
-                    <option value="Cek Turnitin">Cek Turnitin</option>
+                    <?php foreach($surat_options as $opt): ?>
+                        <option value="<?= htmlspecialchars($opt['nama_surat']) ?>" data-vars="<?= htmlspecialchars($opt['variabel_tambahan']) ?>"><?= htmlspecialchars($opt['nama_surat']) ?></option>
+                    <?php endforeach; ?>
                 </select>
 
                 <div id="dynamicContainer" class="dynamic-fields"></div>
@@ -153,7 +151,7 @@ $tampil = mysqli_stmt_get_result($stmt_tampil);
             </td>
             <td>
                 <?php if($row['status'] == 'Selesai' && !empty($row['surat_jadi'])) { ?>
-                    <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download">Lihat / Cetak</a>
+                    <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download">Cetak</a>
                 <?php } else { echo "Belum tersedia"; } ?>
             </td>
         </tr>

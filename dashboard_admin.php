@@ -42,7 +42,7 @@ $query = mysqli_query($koneksi, "SELECT permohonan_surat.*, users.nama_lengkap, 
     <div class="header">
         <h2>Admin Dashboard</h2>
         <div>
-            <a href="admin_kirim_surat.php" style="background: #3498db; margin-right: 10px;">+ Kirim Surat / SK</a>
+            <a href="admin_master_surat.php" style="background: #9b59b6; margin-right: 10px;">📄 Kelola Jenis Surat</a>
             <a href="admin_arsip.php" style="background: #27ae60; margin-right: 10px;">Arsip Surat</a>
             <a href="logout.php" style="background: #e74c3c;">Sign Out</a>
         </div>
@@ -51,43 +51,43 @@ $query = mysqli_query($koneksi, "SELECT permohonan_surat.*, users.nama_lengkap, 
     <div class="content">
         <div class="card">
             <h3 style="margin-bottom: 25px;">Manajemen Antrean Permohonan (Aktif)</h3>
-    <table>
-        <tr>
+            <table>
+                <tr>
                     <th>User & Peran</th>
                     <th>Detail Layanan</th>
-            <th>Catatan</th>
+                    <th>Catatan</th>
                     <th>Dokumen User</th>
                     <th>Status</th>
                     <th>Aksi</th>
-        </tr>
-        <?php while($row = mysqli_fetch_assoc($query)) { ?>
-        <tr>
-            <td><b><?= htmlspecialchars($row['nama_lengkap']); ?></b> (<?= ucfirst($row['role']); ?>)</td>
-            <td><?= htmlspecialchars($row['jenis_surat']); ?></td>
-            <td><?= htmlspecialchars($row['catatan_user']); ?></td>
-            <td><?php if(!empty($row['berkas_pendukung'])) { ?>
-                    <a href="uploads/<?= htmlspecialchars($row['berkas_pendukung']); ?>" target="_blank" class="btn-view">Buka Berkas</a>
-                <?php } else { ?>
-                    <small style="color: #a0aec0;">Tidak ada berkas</small>
+                </tr>
+                <?php while($row = mysqli_fetch_assoc($query)) { ?>
+                <tr>
+                    <td><b><?= htmlspecialchars($row['nama_lengkap']); ?></b> (<?= ucfirst($row['role']); ?>)</td>
+                    <td><?= htmlspecialchars($row['jenis_surat']); ?></td>
+                    <td><?= htmlspecialchars($row['catatan_user']); ?></td>
+                    <td><?php if(!empty($row['berkas_pendukung'])) { ?>
+                            <a href="uploads/<?= htmlspecialchars($row['berkas_pendukung']); ?>" target="_blank" class="btn-view">Buka Berkas</a>
+                        <?php } else { ?>
+                            <small style="color: #a0aec0;">Tidak ada berkas</small>
+                        <?php } ?>
+                    </td>
+                    <td>
+                        <?php 
+                            $class = '';
+                            if($row['status'] == 'Pending') $class = 'bg-pending';
+                            elseif($row['status'] == 'Diproses') $class = 'bg-proses';
+                            elseif($row['status'] == 'Selesai') $class = 'bg-selesai';
+                            elseif($row['status'] == 'Ditolak') $class = 'bg-ditolak';
+                        ?>
+                        <span class="badge <?= $class; ?>"><?= htmlspecialchars($row['status']); ?></span>
+                    </td>
+                    <td>
+                        <a href="admin_kirim_surat.php?id_permohonan=<?= $row['id']; ?>&user_id=<?= $row['user_id']; ?>&role=<?= $row['role']; ?>&jenis=<?= urlencode($row['jenis_surat']); ?>" 
+                           class="btn-view" style="background: #667eea; color: white; padding: 5px 10px; border-radius: 4px;">Proses Surat</a>
+                    </td>
+                </tr>
                 <?php } ?>
-            </td>
-            <td>
-                <?php 
-                    $class = '';
-                    if($row['status'] == 'Pending') $class = 'bg-pending';
-                    elseif($row['status'] == 'Diproses') $class = 'bg-proses';
-                    elseif($row['status'] == 'Selesai') $class = 'bg-selesai';
-                    elseif($row['status'] == 'Ditolak') $class = 'bg-ditolak';
-                ?>
-                <span class="badge <?= $class; ?>"><?= htmlspecialchars($row['status']); ?></span>
-            </td>
-            <td>
-                <a href="admin_kirim_surat.php?id_permohonan=<?= $row['id']; ?>&user_id=<?= $row['user_id']; ?>&role=<?= $row['role']; ?>&jenis=<?= urlencode($row['jenis_surat']); ?>" 
-                   class="btn-view" style="background: #667eea; color: white; padding: 5px 10px; border-radius: 4px;">Proses Surat</a>
-            </td>
-        </tr>
-        <?php } ?>
-    </table>
+            </table>
         </div>
     </div>
 </body>

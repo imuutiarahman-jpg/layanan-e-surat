@@ -32,6 +32,11 @@ $stmt_tampil = mysqli_prepare($koneksi, "SELECT * FROM permohonan_surat WHERE us
 mysqli_stmt_bind_param($stmt_tampil, "i", $user_id);
 mysqli_stmt_execute($stmt_tampil);
 $tampil = mysqli_stmt_get_result($stmt_tampil);
+
+// Ambil daftar jenis surat dari master untuk dropdown
+$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat FROM master_surat_jenis ORDER BY nama_surat ASC");
+$surat_options = [];
+while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt; }
 ?>
 <!DOCTYPE html>
 <html>
@@ -89,10 +94,11 @@ $tampil = mysqli_stmt_get_result($stmt_tampil);
             <h3>Formulir Administrasi Dosen</h3>
             <form method="POST" action="">
                 <label>Jenis Administrasi</label>
-                <select name="jenis_surat" required>
-            <option value="Permohonan surat tugas">Permohonan surat tugas</option>
-            <option value="Surat rekomendasi penelitian">Surat rekomendasi penelitian</option>
-            <option value="Permintaan data penelitian">Permintaan data penelitian</option>
+                <select name="jenis_surat" required id="jenis_surat">
+                    <option value="" disabled selected>-- Pilih Jenis Surat --</option>
+                    <?php foreach($surat_options as $opt): ?>
+                        <option value="<?= htmlspecialchars($opt['nama_surat']) ?>"><?= htmlspecialchars($opt['nama_surat']) ?></option>
+                    <?php endforeach; ?>
         </select>
                 <label>Deskripsi Kebutuhan</label>
                 <textarea name="catatan_user" placeholder="Jelaskan detail permohonan Anda..."></textarea>
@@ -126,7 +132,7 @@ $tampil = mysqli_stmt_get_result($stmt_tampil);
             <td>
                 <?php if($row['status'] == 'Selesai' && !empty($row['surat_jadi'])) { ?>
                     <?php if($row['surat_jadi'] == 'SYSTEM_GENERATED') { ?>
-                        <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download">Lihat / Cetak</a>
+                        <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download">Cetak</a>
                     <?php } else { ?>
                         <a href="uploads/<?= htmlspecialchars($row['surat_jadi']); ?>" download class="btn-download">Unduh Dokumen</a>
                     <?php } ?>
