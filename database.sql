@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS master_surat_jenis (
     format_nomor VARCHAR(255) NOT NULL,
     file_template VARCHAR(255) NOT NULL,
     variabel_tambahan TEXT,
+    require_berkas TINYINT(1) DEFAULT 0,
+    info_berkas VARCHAR(255) DEFAULT NULL,
     updated_by VARCHAR(100),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

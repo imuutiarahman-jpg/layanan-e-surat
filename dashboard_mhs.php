@@ -16,33 +16,41 @@ if (isset($_POST['ajukan'])) {
     $jenis_surat = $_POST['jenis_surat'];
     $catatan = $_POST['catatan_user'];
     $data_surat = isset($_POST['var']) ? json_encode($_POST['var']) : null;
-    
-    $berkas = $_FILES['berkas']['name'];
-    $tmp_name = $_FILES['berkas']['tmp_name'];
-    $ekstensi = strtolower(pathinfo($berkas, PATHINFO_EXTENSION));
-    $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
 
-    if (!in_array($ekstensi, $allowed)) {
-        echo "<script>alert('Format file tidak diizinkan! (Hanya PDF/JPG/PNG)');</script>";
-    } else {
-        $berkas_baru = time() . "_" . bin2hex(random_bytes(4)) . "." . $ekstensi;
-        if (!is_dir('uploads')) mkdir('uploads', 0777, true);
-    
-        if (move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
-            $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, catatan_user, berkas_pendukung, data_surat) VALUES (?, ?, ?, ?, ?)");
-            if ($stmt) {
-                mysqli_stmt_bind_param($stmt, "issss", $user_id, $jenis_surat, $catatan, $berkas_baru, $data_surat);
-                if (mysqli_stmt_execute($stmt)) {
-                    echo "<script>alert('Permohonan berhasil dikirim!'); window.location='dashboard_mhs.php';</script>";
-                    exit;
-                } else {
-                    echo "<script>alert('Gagal mengeksekusi perintah: " . mysqli_stmt_error($stmt) . "');</script>";
-                }
+    $berkas_baru = null;
+    $upload_ok = true;
+
+    if (!empty($_FILES['berkas']['name'])) {
+        $berkas = $_FILES['berkas']['name'];
+        $tmp_name = $_FILES['berkas']['tmp_name'];
+        $ekstensi = strtolower(pathinfo($berkas, PATHINFO_EXTENSION));
+        $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+
+        if (!in_array($ekstensi, $allowed)) {
+            echo "<script>alert('Format file tidak diizinkan! (Hanya PDF/JPG/PNG)');</script>";
+            $upload_ok = false;
+        } else {
+            $berkas_baru = time() . "_" . bin2hex(random_bytes(4)) . "." . $ekstensi;
+            if (!is_dir('uploads')) mkdir('uploads', 0777, true);
+            if (!move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
+                echo "<script>alert('Gagal mengunggah berkas.');</script>";
+                $upload_ok = false;
+            }
+        }
+    }
+
+    if ($upload_ok) {
+        $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, catatan_user, berkas_pendukung, data_surat) VALUES (?, ?, ?, ?, ?)");
+        if ($stmt) {
+            mysqli_stmt_bind_param($stmt, "issss", $user_id, $jenis_surat, $catatan, $berkas_baru, $data_surat);
+            if (mysqli_stmt_execute($stmt)) {
+                echo "<script>alert('Permohonan berhasil dikirim!'); window.location='dashboard_mhs.php';</script>";
+                exit;
             } else {
-                echo "<script>alert('Gagal menyiapkan database: " . mysqli_error($koneksi) . "');</script>";
+                echo "<script>alert('Gagal mengeksekusi perintah: " . mysqli_stmt_error($stmt) . "');</script>";
             }
         } else {
-            echo "<script>alert('Gagal mengunggah berkas. Pastikan folder uploads tersedia dan memiliki izin tulis.');</script>";
+            echo "<script>alert('Gagal menyiapkan database: " . mysqli_error($koneksi) . "');</script>";
         }
     }
 }
@@ -65,9 +73,11 @@ if ($stmt_tampil) {
 }
 
 // Ambil daftar jenis surat dari master untuk dropdown
-$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan, prodi FROM master_surat_jenis ORDER BY nama_surat ASC");
+$master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan, prodi, require_berkas, info_berkas FROM master_surat_jenis ORDER BY nama_surat ASC");
 $surat_options = [];
-while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt; }
+if ($master_surat_query) {
+    while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt; }
+}
 ?>
 <!DOCTYPE html>
 <html>
@@ -213,7 +223,11 @@ while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt;
                     <select name="jenis_surat" id="jenis_surat" required onchange="showFormFields()" disabled>
                         <option value="" disabled selected>-- Pilih Jenis Surat --</option>
                         <?php foreach($surat_options as $opt): ?>
-                            <option value="<?= htmlspecialchars($opt['nama_surat']) ?>" data-prodi="<?= htmlspecialchars($opt['prodi']) ?>" data-vars="<?= htmlspecialchars($opt['variabel_tambahan']) ?>"><?= htmlspecialchars($opt['nama_surat']) ?></option>
+                            <option value="<?= htmlspecialchars($opt['nama_surat']) ?>" 
+                                    data-prodi="<?= htmlspecialchars($opt['prodi']) ?>" 
+                                    data-vars="<?= htmlspecialchars($opt['variabel_tambahan']) ?>"
+                                    data-require-berkas="<?= $opt['require_berkas'] ?>"
+                                    data-info-berkas="<?= htmlspecialchars($opt['info_berkas']) ?>"><?= htmlspecialchars($opt['nama_surat']) ?></option>
                         <?php endforeach; ?>
                     </select>
 
@@ -221,8 +235,6 @@ while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt;
 
                     <label>Catatan Tambahan</label>
                     <textarea name="catatan_user" rows="3" placeholder="Jelaskan kebutuhan Anda secara singkat..."></textarea>
-                    <label>Unggah Berkas Pendukung (PDF/Image)</label>
-                    <input type="file" name="berkas" required style="border:none; padding:10px 0;">
                     <button type="submit" name="ajukan">Kirim Permohonan</button>
                 </form>
             </div>
@@ -317,6 +329,12 @@ while($opt = mysqli_fetch_assoc($master_surat_query)) { $surat_options[] = $opt;
                     fields += `<label>${label}</label><input type="text" name="var[${cleanVar}]" placeholder="Masukkan ${label}..." required>`;
                 }
             });
+        }
+
+        const requireBerkas = selectedOption.getAttribute('data-require-berkas') === '1';
+        if (requireBerkas) {
+            const labelText = selectedOption.getAttribute('data-info-berkas') || 'Unggah Berkas Pendukung (PDF/Image)';
+            fields += `<label>${labelText}</label><input type="file" name="berkas" style="border:none; padding:10px 0;" required>`;
         }
 
         container.innerHTML = "<h4 style='margin-top:0; color:#4e73df;'>Lengkapi Data Surat</h4>" + fields;

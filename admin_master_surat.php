@@ -126,12 +126,15 @@ if (!$query) {
                             <div class="fw-bold"><?= htmlspecialchars($row['nama_surat']) ?></div>
                         </td>
                         <td>
-                            <?php if(!empty($row['variabel_tambahan'])): ?>
+                            <?php if(!empty($row['variabel_tambahan']) || $row['require_berkas']): ?>
                                 <?php foreach(explode(',', $row['variabel_tambahan']) as $vt): ?>
                                     <span class="badge bg-primary badge-variable"><?= trim($vt) ?></span>
                                 <?php endforeach; ?>
+                                <?php if($row['require_berkas']): ?>
+                                    <span class="badge bg-warning text-dark badge-variable" title="<?= htmlspecialchars($row['info_berkas']) ?>"><i class="fa-solid fa-paperclip"></i> Berkas Wajib</span>
+                                <?php endif; ?>
                             <?php else: ?>
-                                <small class="text-muted">Ganti template untuk deteksi variabel</small>
+                                <small class="text-muted">-</small>
                             <?php endif; ?>
                         </td>
                         <td>
@@ -192,6 +195,15 @@ if (!$query) {
                         <label class="form-label fw-bold">Variabel Tambahan (Opsional)</label>
                         <input type="text" name="variabel_tambahan" class="form-control" placeholder="Contoh: ${instansi}, ${keperluan}">
                         <small class="text-muted mt-1 d-block" style="font-size: 0.75rem;">Gunakan format seperti bawaan, pisahkan dengan tanda koma jika lebih dari satu.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Berkas Pendukung</label>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="require_berkas" value="1" id="reqBerkas">
+                            <label class="form-check-label" for="reqBerkas">Aktifkan Unggah Berkas</label>
+                        </div>
+                        <input type="text" name="info_berkas" class="form-control form-control-sm" placeholder="Instruksi berkas (Contoh: Lampirkan KTP/KTM)">
                     </div>
                     
                     <div class="mb-3">

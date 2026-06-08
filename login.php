@@ -37,8 +37,41 @@ if (isset($_POST['login'])) {
     <title>Login | E-Surat</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; color: #1c1e21; }
-        .login-box { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); width: 100%; max-width: 360px; }
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: flex-end; /* Menggeser konten ke kanan */
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #1c1e21;
+            position: relative; /* Diperlukan untuk z-index pada pseudo-element */
+        }
+        body::before {
+            content: '';
+            position: fixed; /* Mengisi seluruh viewport */
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('gambar/background.png'); /* Mengambil gambar dari folder gambar */
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            z-index: -1; /* Memastikan latar belakang berada di belakang konten */
+        }
+        .login-box {
+            background: white; /* Warna putih solid */
+            backdrop-filter: blur(60px); /* Efek blur pada kotak ditingkatkan lagi */
+            -webkit-backdrop-filter: blur(60px); /* Dukungan untuk Safari */
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            width: 100%;
+            max-width: 360px;
+            margin-right: 80px; /* Memberi jarak dari pinggir kanan */
+        }
         h3 { margin-bottom: 24px; font-weight: 600; color: #1c3faa; text-align: center; }
         input, select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #dddfe2; border-radius: 6px; box-sizing: border-box; font-size: 14px; transition: border 0.2s; }
         input:focus { border-color: #1c3faa; outline: none; box-shadow: 0 0 0 2px rgba(28, 63, 170, 0.1); }

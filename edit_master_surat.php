@@ -49,6 +49,15 @@ $list_prodi = ['Umum', 'Dosen', 'Sistem Informasi', 'Geografi', 'Ilmu Komputer',
                 </select>
             </div>
 
+            <div class="mb-3">
+                <label class="form-label fw-bold">Berkas Pendukung</label>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="require_berkas" value="1" id="editReqBerkas" <?= $data['require_berkas'] ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="editReqBerkas">Aktifkan Unggah Berkas</label>
+                </div>
+                <input type="text" name="info_berkas" class="form-control" value="<?= htmlspecialchars($data['info_berkas']) ?>" placeholder="Instruksi berkas...">
+            </div>
+
             <div class="mb-4">
                 <label class="form-label fw-bold">Variabel Tambahan</label>
                 <input type="text" name="variabel_tambahan" class="form-control" value="<?= htmlspecialchars($data['variabel_tambahan']) ?>">

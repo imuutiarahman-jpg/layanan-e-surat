@@ -57,6 +57,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($action == 'tambah_jenis') {
         $nama_surat = mysqli_real_escape_string($koneksi, $_POST['nama_surat']);
         $prodi = mysqli_real_escape_string($koneksi, $_POST['prodi']);
+        $require_berkas = isset($_POST['require_berkas']) ? 1 : 0;
+        $info_berkas = mysqli_real_escape_string($koneksi, $_POST['info_berkas']);
         $updated_by = $_SESSION['nama'] ?? 'Admin'; 
 
         // Logika upload file template .docx
@@ -80,8 +82,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
 
             // Jalankan Query Insert ke Database
-            $query = "INSERT INTO master_surat_jenis (nama_surat, prodi, variabel_tambahan, file_template, updated_by, updated_at) 
-                      VALUES ('$nama_surat', '$prodi', '$variabel_tambahan', '$file_name', '$updated_by', NOW())";
+            $query = "INSERT INTO master_surat_jenis (nama_surat, prodi, variabel_tambahan, file_template, require_berkas, info_berkas, updated_by, updated_at) 
+                      VALUES ('$nama_surat', '$prodi', '$variabel_tambahan', '$file_name', '$require_berkas', '$info_berkas', '$updated_by', NOW())";
             
             if (mysqli_query($koneksi, $query)) {
                 // Berhasil, kembalikan ke halaman utama
@@ -141,12 +143,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $id = mysqli_real_escape_string($koneksi, $_POST['id']);
         $nama_surat = mysqli_real_escape_string($koneksi, $_POST['nama_surat']);
         $prodi = mysqli_real_escape_string($koneksi, $_POST['prodi']);
+        $require_berkas = isset($_POST['require_berkas']) ? 1 : 0;
+        $info_berkas = mysqli_real_escape_string($koneksi, $_POST['info_berkas']);
         $variabel_tambahan = mysqli_real_escape_string($koneksi, $_POST['variabel_tambahan']);
         $updated_by = $_SESSION['nama'] ?? 'Admin';
 
         $query = "UPDATE master_surat_jenis SET 
                   nama_surat = '$nama_surat', 
                   prodi = '$prodi',
+                  require_berkas = '$require_berkas',
+                  info_berkas = '$info_berkas',
                   variabel_tambahan = '$variabel_tambahan', 
                   updated_by = '$updated_by', 
                   updated_at = NOW() 
