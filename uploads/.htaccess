@@ -1,0 +1,6 @@
+# Larang listing + larang eksekusi script di folder upload
+Options -Indexes
+RemoveHandler .php .phtml .phar
+<FilesMatch "\.(php|phtml|phar|pl|py|sh|cgi)$">
+  Require all denied
+</FilesMatch>

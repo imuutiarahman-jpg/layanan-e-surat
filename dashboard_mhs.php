@@ -5,11 +5,17 @@ if (!isset($_SESSION['login']) || $_SESSION['role'] != 'mahasiswa') {
     exit;
 }
 
-$user_id = $_SESSION['user_id'];
+$user_id = (int)$_SESSION['user_id'];
 
-// Ambil data profil mahasiswa untuk pre-fill formulir
-$u_query = mysqli_query($koneksi, "SELECT nama_lengkap, nomor_induk, prodi FROM users WHERE id = '$user_id'");
-$u_data = mysqli_fetch_assoc($u_query);
+// Ambil data profil mahasiswa untuk pre-fill formulir (prepared, cegah SQLi)
+$u_data = ['nama_lengkap' => '', 'nomor_induk' => '', 'prodi' => ''];
+$stmt_u = mysqli_prepare($koneksi, "SELECT nama_lengkap, nomor_induk, prodi FROM users WHERE id = ?");
+if ($stmt_u) {
+    mysqli_stmt_bind_param($stmt_u, "i", $user_id);
+    mysqli_stmt_execute($stmt_u);
+    $res_u = mysqli_stmt_get_result($stmt_u);
+    if ($r = mysqli_fetch_assoc($res_u)) { $u_data = $r; }
+}
 
 // Proses Pengajuan Surat
 if (isset($_POST['ajukan'])) {
@@ -26,18 +32,34 @@ if (isset($_POST['ajukan'])) {
         $ekstensi = strtolower(pathinfo($berkas, PATHINFO_EXTENSION));
         $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
 
-        if (!in_array($ekstensi, $allowed)) {
+        if ($_FILES['berkas']['error'] !== UPLOAD_ERR_OK) {
+            echo "<script>alert('Gagal mengunggah berkas (kode error upload).');</script>";
+            $upload_ok = false;
+        } elseif (!in_array($ekstensi, $allowed)) {
             echo "<script>alert('Format file tidak diizinkan! (Hanya PDF/JPG/PNG)');</script>";
             $upload_ok = false;
+        } elseif ($_FILES['berkas']['size'] > 5 * 1024 * 1024) {
+            echo "<script>alert('Ukuran file maksimal 5MB.');</script>";
+            $upload_ok = false;
         } else {
+            // Validasi MIME asli agar ekstensi tidak bisa dipalsukan
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = $finfo ? finfo_file($finfo, $tmp_name) : '';
+            if ($finfo) finfo_close($finfo);
+            $allowed_mime = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+            if (!in_array($mime, $allowed_mime, true)) {
+                echo "<script>alert('Isi file tidak sesuai format yang diizinkan.');</script>";
+                $upload_ok = false;
+            } else {
             $berkas_baru = time() . "_" . bin2hex(random_bytes(4)) . "." . $ekstensi;
-            if (!is_dir('uploads')) mkdir('uploads', 0777, true);
+            if (!is_dir('uploads')) mkdir('uploads', 0755, true);
             if (!move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
                 echo "<script>alert('Gagal mengunggah berkas.');</script>";
                 $upload_ok = false;
             }
-        }
-    }
+            } // tutup else MIME valid
+        } // tutup else ekstensi/size valid
+    } // tutup if ada berkas
 
     if ($upload_ok) {
         $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, catatan_user, berkas_pendukung, data_surat) VALUES (?, ?, ?, ?, ?)");
@@ -47,10 +69,10 @@ if (isset($_POST['ajukan'])) {
                 echo "<script>alert('Permohonan berhasil dikirim!'); window.location='dashboard_mhs.php';</script>";
                 exit;
             } else {
-                echo "<script>alert('Gagal mengeksekusi perintah: " . mysqli_stmt_error($stmt) . "');</script>";
+                echo "<script>alert('Gagal mengirim permohonan. Silakan coba lagi.');</script>";
             }
         } else {
-            echo "<script>alert('Gagal menyiapkan database: " . mysqli_error($koneksi) . "');</script>";
+            echo "<script>alert('Gagal menyiapkan sistem. Silakan coba lagi.');</script>";
         }
     }
 }
@@ -162,11 +184,12 @@ if ($master_surat_query) {
             $ids_to_update = [];
             while ($n = mysqli_fetch_assoc($notif_res)) {
                 $msgs[] = "- " . $n['pesan'];
-                $ids_to_update[] = $n['id'];
+                $ids_to_update[] = (int)$n['id'];
             }
             if(!empty($ids_to_update)) {
                 $id_list = implode(',', $ids_to_update);
-                mysqli_query($koneksi, "UPDATE notifikasi SET is_read = 1 WHERE id IN ($id_list)");
+                // IDs sudah di-cast ke int, aman dari SQLi
+                mysqli_query($koneksi, "UPDATE notifikasi SET is_read = 1 WHERE user_id = $user_id AND id IN ($id_list)");
             }
             $msg_text = "PEMBERITAHUAN BARU:\n\n" . implode("\n", $msgs);
             echo "<script>alert(" . json_encode($msg_text) . ");</script>";
@@ -175,9 +198,18 @@ if ($master_surat_query) {
         
         <div class="stats-grid">
             <?php
-                $s_total = mysqli_num_rows(mysqli_query($koneksi, "SELECT id FROM permohonan_surat WHERE user_id='$user_id'"));
-                $s_pending = mysqli_num_rows(mysqli_query($koneksi, "SELECT id FROM permohonan_surat WHERE user_id='$user_id' AND status='Pending'"));
-                $s_selesai = mysqli_num_rows(mysqli_query($koneksi, "SELECT id FROM permohonan_surat WHERE user_id='$user_id' AND status='Selesai'"));
+                $s_total = $s_pending = $s_selesai = 0;
+                $st = mysqli_prepare($koneksi, "SELECT status, COUNT(*) c FROM permohonan_surat WHERE user_id=? GROUP BY status");
+                if ($st) {
+                    mysqli_stmt_bind_param($st, "i", $user_id);
+                    mysqli_stmt_execute($st);
+                    $rs = mysqli_stmt_get_result($st);
+                    $map = [];
+                    while ($r = mysqli_fetch_assoc($rs)) { $map[$r['status']] = (int)$r['c']; }
+                    foreach ($map as $k => $v) { $s_total += $v; }
+                    $s_pending = $map['Pending'] ?? 0;
+                    $s_selesai = $map['Selesai'] ?? 0;
+                }
             ?>
             <div class="stat-card">
                 <div>

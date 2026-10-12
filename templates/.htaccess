@@ -1,0 +1,7 @@
+# Larang listing + larang eksekusi script di folder template
+# File .docx tetap bisa didownload via link admin
+Options -Indexes
+RemoveHandler .php .phtml .phar
+<FilesMatch "\.(php|phtml|phar|pl|py|sh|cgi)$">
+  Require all denied
+</FilesMatch>

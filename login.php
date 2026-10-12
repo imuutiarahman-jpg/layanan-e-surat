@@ -4,32 +4,37 @@ include 'koneksi.php';
 if (isset($_POST['login'])) {
     $username = trim($_POST['username']);
     $password = $_POST['password'];
-    $role = $_POST['role'];
+    $role = isset($_POST['role']) ? $_POST['role'] : '';
 
+    // Login publik hanya untuk mahasiswa/dosen. Admin wajib via panel-admin.php
+    if (!in_array($role, ['mahasiswa', 'dosen'], true)) {
+        $error = true;
+    } else {
     $stmt = mysqli_prepare($koneksi, "SELECT * FROM users WHERE username=? AND role=?");
     mysqli_stmt_bind_param($stmt, "ss", $username, $role);
     mysqli_stmt_execute($stmt);
     $result = mysqli_stmt_get_result($stmt);
 
     if ($row = mysqli_fetch_assoc($result)) {
-        if (password_verify($password, $row['password'])) {
+        if (password_verify($password, $row['password']) && in_array($row['role'], ['mahasiswa', 'dosen'], true)) {
+            session_regenerate_id(true);
             $_SESSION['login'] = true;
-            $_SESSION['user_id'] = $row['id'];
+            $_SESSION['user_id'] = (int)$row['id'];
             $_SESSION['nama'] = $row['nama_lengkap'];
             $_SESSION['role'] = $row['role'];
 
-            if ($row['role'] == 'admin') {
-                header("Location: dashboard_admin.php");
-            } elseif ($row['role'] == 'mahasiswa') {
+            if ($row['role'] == 'mahasiswa') {
                 header("Location: dashboard_mhs.php");
-            } elseif ($row['role'] == 'dosen') {
+            } else {
                 header("Location: dashboard_dosen.php");
             }
             exit;
         }
     }
     $error = true;
+    } // tutup else whitelist role
 }
+?>
 ?>
 <!DOCTYPE html>
 <html>
@@ -98,7 +103,6 @@ if (isset($_POST['login'])) {
             <option value="" disabled selected>Pilih Role...</option>
             <option value="mahasiswa">Mahasiswa</option>
             <option value="dosen">Dosen</option>
-            <option value="admin">Admin</option>
         </select>
         <button type="submit" name="login">Masuk ke Sistem</button>
     </form>

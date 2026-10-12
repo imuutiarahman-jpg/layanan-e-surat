@@ -1,0 +1,14 @@
+# E-Surat - Pengaman hosting
+# File ini BARU, tidak mengubah kode PHP yang sudah ada
+
+# 1. Matikan daftar file "Index of /"
+Options -Indexes
+
+# 2. File yang dibuka saat akses domain root "/"
+DirectoryIndex index.php login.php
+
+# 3. Tutup akses HTTP langsung ke file sensitif
+# include/require dari PHP tetap jalan (akses filesystem), yang diblokir hanya akses via browser
+<FilesMatch "^(database\.sql|composer\.(json|lock)|koneksi\.php|\.htaccess)$">
+  Require all denied
+</FilesMatch>

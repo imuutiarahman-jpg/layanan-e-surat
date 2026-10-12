@@ -1,13 +1,17 @@
 <?php
 include 'koneksi.php';
-if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin') {
-    header("Location: login.php");
+if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['login_via'] ?? '') !== 'panel-admin')) {
+    header("Location: panel-admin.php");
     exit;
 }
 
-// Handle Delete Request
+// Handle Delete Request (dilindungi CSRF, tampilan link tetap sama)
 if (isset($_GET['delete_id'])) {
-    $delete_id = mysqli_real_escape_string($koneksi, $_GET['delete_id']);
+    if (!csrf_verify($_GET['csrf'] ?? '')) {
+        die("Token keamanan tidak valid. Silakan kembali dan muat ulang halaman.");
+    }
+    $delete_id = (int)$_GET['delete_id'];
+    if ($delete_id <= 0) { die("ID tidak valid."); }
 
     // Optional: Delete associated files if 'surat_jadi' is not 'SYSTEM_GENERATED'
     // This part is commented out for now, but can be uncommented if file deletion is desired.
@@ -24,20 +28,27 @@ if (isset($_GET['delete_id'])) {
 
     // Delete the permohonan_surat entry
     $delete_stmt = mysqli_prepare($koneksi, "DELETE FROM permohonan_surat WHERE id = ?");
+    $view_r = $_GET['view'] ?? 'mahasiswa';
+    $prodi_r = $_GET['prodi'] ?? '';
+    $search_r = $_GET['search'] ?? '';
     if ($delete_stmt) {
         mysqli_stmt_bind_param($delete_stmt, "i", $delete_id);
         mysqli_stmt_execute($delete_stmt);
-        echo "<script>alert('Data surat berhasil dihapus.'); window.location='admin_arsip.php?view=" . htmlspecialchars($_GET['view']) . "&prodi=" . urlencode($_GET['prodi']) . "&search=" . urlencode($_GET['search']) . "';</script>";
+        echo "<script>alert('Data surat berhasil dihapus.'); window.location='admin_arsip.php?view=" . htmlspecialchars($view_r) . "&prodi=" . urlencode($prodi_r) . "&search=" . urlencode($search_r) . "';</script>";
     } else {
-        echo "<script>alert('Gagal menghapus data surat: " . mysqli_error($koneksi) . "'); window.location='admin_arsip.php?view=" . htmlspecialchars($_GET['view']) . "&prodi=" . urlencode($_GET['prodi']) . "&search=" . urlencode($_GET['search']) . "';</script>";
+        echo "<script>alert('Gagal menghapus data. Silakan coba lagi.'); window.location='admin_arsip.php?view=" . htmlspecialchars($view_r) . "&prodi=" . urlencode($prodi_r) . "&search=" . urlencode($search_r) . "';</script>";
     }
     exit;
 }
 
-// Filter Logika
+// Filter Logika (whitelist agar tampilan tetap, query aman)
 $view = isset($_GET['view']) ? $_GET['view'] : 'mahasiswa';
+if (!in_array($view, ['mahasiswa', 'dosen'], true)) { $view = 'mahasiswa'; }
+$allowed_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
 $prodi_filter = isset($_GET['prodi']) ? $_GET['prodi'] : '';
-$search = isset($_GET['search']) ? mysqli_real_escape_string($koneksi, $_GET['search']) : '';
+if ($prodi_filter !== '' && !in_array($prodi_filter, $allowed_prodi, true)) { $prodi_filter = ''; }
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$search = mb_substr($search, 0, 100);
 $role_target = ($view == 'dosen') ? 'dosen' : 'mahasiswa';
 
 $sql = "SELECT permohonan_surat.*, users.nama_lengkap, users.role, users.prodi 
@@ -73,7 +84,7 @@ mysqli_stmt_execute($stmt_arsip);
 $query = mysqli_stmt_get_result($stmt_arsip);
 
 if (!$query) {
-    die("Gagal mengambil data arsip. Error: " . mysqli_error($koneksi));
+    die("Gagal mengambil data arsip. Silakan coba lagi.");
 }
 
 $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
@@ -167,7 +178,7 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
                     <th>Aksi</th>
                 </tr>
                 <?php while($row = mysqli_fetch_assoc($query)) { 
-                    $vars = json_decode($row['data_surat'], true);
+                    $vars = !empty($row['data_surat']) ? (json_decode($row['data_surat'], true) ?: []) : [];
                     $nomor_full = isset($vars['nomor_surat']) ? $vars['nomor_surat'] : '-';
                     $nomor_surat = explode('/', $nomor_full)[0];
                 ?>
@@ -188,16 +199,16 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
                     <td>
                         <?php if($row['status'] == 'Selesai' && !empty($row['surat_jadi'])) { ?>
                             <!-- Tombol Lihat: Menampilkan halaman review variabel atau pratinjau inline -->
-                            <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-view" style="color: #3498db;">👁 Lihat</a>
+                            <a href="cetak_surat.php?id=<?= (int)$row['id']; ?>" target="_blank" class="btn-view" style="color: #3498db;">👁 Lihat</a>
                             
                             <!-- Tombol Cetak: Memaksa unduhan file -->
-                            <a href="cetak_surat.php?id=<?= $row['id']; ?>&download=1" class="btn-view" style="color: #2ecc71; margin-left:10px;">📥 Cetak</a>
+                            <a href="cetak_surat.php?id=<?= (int)$row['id']; ?>&download=1" class="btn-view" style="color: #2ecc71; margin-left:10px;">📥 Cetak</a>
                         <?php } else { ?>
                             <small style="color: #a0aec0;">-</small>
                         <?php } ?>
                     </td>
                     <td>
-                        <a href="admin_arsip.php?delete_id=<?= $row['id'] ?>&view=<?= htmlspecialchars($view) ?>&prodi=<?= urlencode($prodi_filter) ?>&search=<?= urlencode($search) ?>" onclick="return confirm('Apakah Anda yakin ingin menghapus data arsip ini?');" class="btn-delete">Hapus</a>
+                        <a href="admin_arsip.php?delete_id=<?= (int)$row['id'] ?>&view=<?= htmlspecialchars($view) ?>&prodi=<?= urlencode($prodi_filter) ?>&search=<?= urlencode($search) ?>&csrf=<?= urlencode(csrf_token()) ?>" onclick="return confirm('Apakah Anda yakin ingin menghapus data arsip ini?');" class="btn-delete">Hapus</a>
                     </td>
                 </tr>
                 <?php } ?>

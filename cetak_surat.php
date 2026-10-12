@@ -30,8 +30,31 @@ if ($data['status'] !== 'Selesai' && !($_SESSION['role'] === 'admin' && $data['s
 
 $is_admin = ($_SESSION['role'] === 'admin');
 
+// Logika Tolak permohonan oleh Admin (tanpa mengubah tampilan daftar, hanya tambah aksi di preview)
+if (isset($_POST['tolak_permohonan']) && $is_admin) {
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        die("Token keamanan tidak valid.");
+    }
+    $alasan = trim($_POST['alasan_tolak'] ?? '');
+    if ($alasan === '') { $alasan = 'Permohonan ditolak oleh admin.'; }
+    $upd = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET status='Ditolak' WHERE id=?");
+    if ($upd) {
+        mysqli_stmt_bind_param($upd, "i", $id);
+        mysqli_stmt_execute($upd);
+        $pesan_notif = "Permohonan '" . $data['jenis_surat'] . "' DITOLAK. Alasan: " . $alasan;
+        $stmt_n = mysqli_prepare($koneksi, "INSERT INTO notifikasi (user_id, pesan) VALUES (?, ?)");
+        mysqli_stmt_bind_param($stmt_n, "is", $data['user_id'], $pesan_notif);
+        mysqli_stmt_execute($stmt_n);
+        echo "<script>alert('Permohonan ditolak dan user telah dinotifikasi.'); window.location='dashboard_admin.php';</script>";
+        exit;
+    }
+}
+
 // Logika Konfirmasi oleh Admin untuk mengirim surat ke User
 if (isset($_POST['konfirmasi_kirim']) && $is_admin) {
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        die("Token keamanan tidak valid.");
+    }
     if (isset($_FILES['file_ttd']) && $_FILES['file_ttd']['error'] == 0) {
         $berkas = $_FILES['file_ttd']['name'];
         $tmp_name = $_FILES['file_ttd']['tmp_name'];
@@ -40,9 +63,19 @@ if (isset($_POST['konfirmasi_kirim']) && $is_admin) {
 
         if (!in_array($ext, $allowed)) {
             echo "<script>alert('Format file tidak diizinkan! (PDF/DOCX/JPG/PNG)');</script>";
+        } elseif ($_FILES['file_ttd']['size'] > 10 * 1024 * 1024) {
+            echo "<script>alert('Ukuran file maksimal 10MB.');</script>";
         } else {
+            // Validasi MIME agar file TTD tidak bisa dipalsukan
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = $finfo ? finfo_file($finfo, $tmp_name) : '';
+            if ($finfo) finfo_close($finfo);
+            $allowed_mime = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'image/jpeg', 'image/png'];
+            if (!in_array($mime, $allowed_mime, true)) {
+                echo "<script>alert('Isi file tidak valid.');</script>";
+            } else {
             $berkas_baru = "SIGNED_" . time() . "_" . bin2hex(random_bytes(4)) . "." . $ext;
-            if (!is_dir('uploads')) mkdir('uploads', 0777, true);
+            if (!is_dir('uploads')) mkdir('uploads', 0755, true);
 
             if (move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
                 $update_stmt = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET status='Selesai', surat_jadi=? WHERE id=?");
@@ -58,7 +91,8 @@ if (isset($_POST['konfirmasi_kirim']) && $is_admin) {
                     exit;
                 }
             }
-        }
+            } // tutup else MIME valid
+        } // tutup else ext/size valid
     } else {
         echo "<script>alert('Gagal mengunggah berkas tanda tangan. Pastikan file terpilih.');</script>";
     }
@@ -68,18 +102,35 @@ $force_download = (isset($_GET['download']) && $_GET['download'] == '1');
 
 // === JIKA SURAT BERUPA FILE UPLOAD ===
 if ($data['surat_jadi'] !== 'SYSTEM_GENERATED') {
-    $file_path = "uploads/" . $data['surat_jadi'];
+    $safe_name = basename((string)$data['surat_jadi']);
+    // Tolak traversal / nama aneh
+    if ($safe_name === '' || $safe_name !== $data['surat_jadi'] || strpos($safe_name, '..') !== false) {
+        die("Nama file tidak valid.");
+    }
+    $file_path = "uploads/" . $safe_name;
+    if (!is_file($file_path)) {
+        die("File surat tidak ditemukan. Hubungi admin.");
+    }
+    // Pastikan file benar-benar di dalam folder uploads (anti traversal via symlink)
+    $real_base = realpath('uploads');
+    $real_file = realpath($file_path);
+    if ($real_base === false || $real_file === false || strpos($real_file, $real_base) !== 0) {
+        die("Akses file ditolak.");
+    }
     $ext = strtolower(pathinfo($file_path, PATHINFO_EXTENSION));
     
     // Mapping content type sederhana
     $ctype = "application/octet-stream";
     if($ext == 'pdf') $ctype = "application/pdf";
     if(in_array($ext, ['jpg','jpeg','png'])) $ctype = "image/".$ext;
+    if(in_array($ext, ['doc','docx'])) $ctype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
+    if (ob_get_contents()) ob_end_clean();
     header("Content-Type: $ctype");
+    header("Content-Length: " . filesize($file_path));
     // Jika download=1 atau filenya word (.docx/.doc), paksa unduh. Selain itu (PDF/Gambar) tampilkan inline.
     $disposition = ($force_download || strpos($ext, 'doc') !== false) ? 'attachment' : 'inline';
-    header("Content-Disposition: $disposition; filename=\"" . $data['surat_jadi'] . "\"");
+    header("Content-Disposition: $disposition; filename=\"" . $safe_name . "\"");
     
     readfile($file_path);
     exit;
@@ -102,7 +153,7 @@ mysqli_stmt_bind_param($stmt_tmpl, "ss", $nama_surat_clean, $search_param);
 mysqli_stmt_execute($stmt_tmpl);
 $res_tmpl = mysqli_stmt_get_result($stmt_tmpl);
 if ($row_tmpl = mysqli_fetch_assoc($res_tmpl)) {
-    $docx_template = 'templates/' . $row_tmpl['file_template'];
+    $docx_template = 'templates/' . basename($row_tmpl['file_template']);
 }
 
 if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
@@ -126,7 +177,7 @@ if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
     if ($is_admin && !$force_download) {
         // Untuk admin: simpan sementara dan tampilkan halaman pratinjau
         $temp_dir = 'uploads/temp_admin';
-        if (!is_dir($temp_dir)) mkdir($temp_dir, 0777, true);
+        if (!is_dir($temp_dir)) mkdir($temp_dir, 0755, true);
         
         $generated_file_path = $temp_dir . '/' . uniqid('docx_') . '_' . $base_filename;
         $templateProcessor->saveAs($generated_file_path);
@@ -154,9 +205,17 @@ if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
                 <a href="<?= htmlspecialchars($generated_file_path) ?>" class="btn-action btn-download" download="<?= htmlspecialchars($base_filename) ?>">⬇ Unduh DOCX</a>
                 
                 <form method="POST" enctype="multipart/form-data" style="margin-top: 20px; border: 1px dashed #ccc; padding: 20px; border-radius: 8px;">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                     <label style="display:block; margin-bottom:10px; font-weight:bold;">Unggah Surat Final (Tanda Tangan/PDF):</label>
                     <input type="file" name="file_ttd" accept=".pdf,.docx,.jpg,.png" required style="margin-bottom:15px; border: 1px solid #ddd; padding: 8px; width: 100%; box-sizing: border-box;">
                     <button type="submit" name="konfirmasi_kirim" class="btn-action btn-download" style="border:none; cursor:pointer; background:#2ecc71; width: 100%;">✅ Unggah & Kirim ke User</button>
+                </form>
+
+                <form method="POST" onsubmit="return confirm('Yakin tolak permohonan ini? User akan dinotifikasi.');" style="margin-top: 10px; border: 1px dashed #e74c3c; padding: 20px; border-radius: 8px;">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+                    <label style="display:block; margin-bottom:10px; font-weight:bold; color:#c0392b;">Tolak Permohonan:</label>
+                    <input type="text" name="alasan_tolak" placeholder="Alasan penolakan..." required style="margin-bottom:15px; border: 1px solid #ddd; padding: 8px; width: 100%; box-sizing: border-box;">
+                    <button type="submit" name="tolak_permohonan" class="btn-action" style="border:none; cursor:pointer; background:#e74c3c; width: 100%;">❌ Tolak & Notifikasi User</button>
                 </form>
 
                 <a href="admin_kirim_surat.php?id_permohonan=<?= $id ?>&user_id=<?= $data['user_id']; ?>&role=<?= $data['role']; ?>&jenis=<?= urlencode($data['jenis_surat']); ?>" class="btn-action btn-edit">✎ Edit Variabel</a>

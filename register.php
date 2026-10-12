@@ -4,8 +4,22 @@ include 'koneksi.php';
 if (isset($_POST['register'])) {
     $username = trim($_POST['username']);
     $nama_lengkap = trim($_POST['nama_lengkap']);
-    $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+    $password_raw = $_POST['password'];
     $role = $_POST['role'];
+
+    // Hardening: hanya mahasiswa/dosen yang boleh daftar via form publik.
+    // Pilihan 'admin' di dropdown tetap tampil agar tampilan tidak berubah,
+    // tapi ditolak di backend untuk mencegah eskalasi privilege.
+    if (!in_array($role, ['mahasiswa', 'dosen'], true)) {
+        $error = "Pendaftaran hanya tersedia untuk Mahasiswa dan Dosen. Hubungi administrator untuk akun Admin.";
+    } elseif (strlen($username) < 3 || strlen($username) > 50 || !preg_match('/^[A-Za-z0-9_.-]+$/', $username)) {
+        $error = "Username 3-50 karakter (huruf/angka/_ . -).";
+    } elseif (strlen($password_raw) < 6) {
+        $error = "Password minimal 6 karakter.";
+    } elseif (trim($nama_lengkap) === '') {
+        $error = "Nama lengkap wajib diisi.";
+    } else {
+    $password = password_hash($password_raw, PASSWORD_DEFAULT);
 
     // Validasi apakah username sudah ada
     $stmt_cek = mysqli_prepare($koneksi, "SELECT id FROM users WHERE username = ?");
@@ -17,9 +31,9 @@ if (isset($_POST['register'])) {
         $error = "Username sudah terdaftar! Gunakan username lain.";
     } else {
         // Insert user baru
-        $nomor_induk = trim($_POST['nomor_induk']);
+        $nomor_induk = isset($_POST['nomor_induk']) ? trim($_POST['nomor_induk']) : '';
         // Pastikan prodi hanya diisi jika role adalah mahasiswa
-        $prodi_val = ($role == 'mahasiswa') ? $_POST['prodi'] : NULL;
+        $prodi_val = ($role == 'mahasiswa' && isset($_POST['prodi'])) ? $_POST['prodi'] : NULL;
         $stmt_ins = mysqli_prepare($koneksi, "INSERT INTO users (username, password, nama_lengkap, role, nomor_induk, prodi) VALUES (?, ?, ?, ?, ?, ?)");
         
         if ($stmt_ins) {
@@ -29,11 +43,12 @@ if (isset($_POST['register'])) {
                 echo "<script>alert('Akun berhasil dibuat! Silakan login.'); window.location='login.php';</script>";
                 exit;
             } else {
-                $error = "Gagal menyimpan data: " . mysqli_stmt_error($stmt_ins);
+                $error = "Gagal menyimpan data. Silakan coba lagi.";
             }
         } else {
-            $error = "Kesalahan pada sistem database: " . mysqli_error($koneksi);
+            $error = "Kesalahan pada sistem. Silakan coba lagi.";
         }
+    }
     }
 }
 ?>
@@ -52,7 +67,7 @@ if (isset($_POST['register'])) {
 <body>
 <div class="register-box">
     <h3 style="text-align:center;">Daftar Akun Baru</h3>
-    <?php if(isset($error)) echo "<p style='color:red; font-size:13px;'>$error</p>"; ?>
+    <?php if(isset($error)) echo "<p style='color:red; font-size:13px;'>" . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . "</p>"; ?>
     <form method="POST" action="" id="regForm">
         <input type="text" name="username" placeholder="Username" required>
         <input type="text" name="nama_lengkap" placeholder="Nama Lengkap" required>
@@ -62,7 +77,6 @@ if (isset($_POST['register'])) {
         <select name="role" id="roleSelect" required onchange="toggleProdi()">
             <option value="mahasiswa">Mahasiswa</option>
             <option value="dosen">Dosen</option>
-            <option value="admin">Admin</option>
         </select>
         
         <div id="prodiSection">

@@ -1,13 +1,17 @@
 <?php
 include 'koneksi.php';
-if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin') {
-    header("Location: login.php");
+if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['login_via'] ?? '') !== 'panel-admin')) {
+    header("Location: panel-admin.php");
     exit;
 }
 
-$id = mysqli_real_escape_string($koneksi, $_GET['id']);
-$query = mysqli_query($koneksi, "SELECT * FROM master_surat_jenis WHERE id = '$id'");
-$data = mysqli_fetch_assoc($query);
+$id = (int)($_GET['id'] ?? 0);
+if ($id <= 0) { die("ID tidak valid."); }
+$stmt = mysqli_prepare($koneksi, "SELECT * FROM master_surat_jenis WHERE id = ?");
+mysqli_stmt_bind_param($stmt, "i", $id);
+mysqli_stmt_execute($stmt);
+$res = mysqli_stmt_get_result($stmt);
+$data = mysqli_fetch_assoc($res);
 
 if (!$data) {
     die("Data tidak ditemukan.");
@@ -32,6 +36,7 @@ $list_prodi = ['Umum', 'Dosen', 'Sistem Informasi', 'Geografi', 'Ilmu Komputer',
     <div class="card p-4">
         <h4 class="mb-4">Edit Jenis Surat</h4>
         <form action="proses_master_surat.php" method="POST">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="edit_jenis">
             <input type="hidden" name="id" value="<?= $data['id'] ?>">
             

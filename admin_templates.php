@@ -1,7 +1,7 @@
 <?php
 include 'koneksi.php';
-if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin') {
-    header("Location: login.php");
+if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['login_via'] ?? '') !== 'panel-admin')) {
+    header("Location: panel-admin.php");
     exit;
 }
 
@@ -17,18 +17,41 @@ while($row_t = mysqli_fetch_assoc($db_templates)) {
     $managed_templates[] = $row_t;
 }
 
-// Proses Unggah Ganti Template (Langkah 3)
+// Proses Unggah Ganti Template (Langkah 3) — hardened tanpa ubah tampilan
 if (isset($_POST['upload_template'])) {
-    $target_file = $template_dir . basename($_POST['filename']);
-    $file_type = strtolower(pathinfo($_FILES["template_docx"]["name"], PATHINFO_EXTENSION));
-
-    if ($file_type != "docx") {
-        $error_msg = "Maaf, hanya file format .docx yang diizinkan.";
+    // File target harus cocok dengan daftar master di DB (cegah overwrite sembarang)
+    $req_file = basename($_POST['filename'] ?? '');
+    $valid = false;
+    $chk = mysqli_prepare($koneksi, "SELECT id FROM master_surat_jenis WHERE file_template = ? LIMIT 1");
+    if ($chk) {
+        mysqli_stmt_bind_param($chk, "s", $req_file);
+        mysqli_stmt_execute($chk);
+        $rchk = mysqli_stmt_get_result($chk);
+        if ($rchk && mysqli_fetch_assoc($rchk)) { $valid = true; }
+    }
+    if (!$valid) {
+        $error_msg = "Nama template tidak terdaftar.";
     } else {
-        if (move_uploaded_file($_FILES["template_docx"]["tmp_name"], $target_file)) {
-            $success_msg = "Template untuk '" . htmlspecialchars($_POST['jenis_surat']) . "' berhasil diperbarui!";
+        $target_file = $template_dir . $req_file;
+        $file_type = strtolower(pathinfo($_FILES["template_docx"]["name"] ?? '', PATHINFO_EXTENSION));
+        $size_ok = (($_FILES["template_docx"]["size"] ?? 0) <= 10 * 1024 * 1024);
+        $err_ok = (($_FILES["template_docx"]["error"] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK);
+
+        if (!$err_ok) {
+            $error_msg = "File gagal diunggah.";
+        } elseif ($file_type != "docx" || !$size_ok) {
+            $error_msg = "Maaf, hanya file .docx maksimal 10MB yang diizinkan.";
         } else {
-            $error_msg = "Terjadi kesalahan saat mengunggah file.";
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = $finfo ? finfo_file($finfo, $_FILES["template_docx"]["tmp_name"]) : '';
+            if ($finfo) finfo_close($finfo);
+            if (!in_array($mime, ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/octet-stream'], true)) {
+                $error_msg = "Isi file bukan dokumen Word yang valid.";
+            } elseif (move_uploaded_file($_FILES["template_docx"]["tmp_name"], $target_file)) {
+                $success_msg = "Template untuk '" . htmlspecialchars($_POST['jenis_surat'] ?? '', ENT_QUOTES, 'UTF-8') . "' berhasil diperbarui!";
+            } else {
+                $error_msg = "Terjadi kesalahan saat mengunggah file.";
+            }
         }
     }
 }

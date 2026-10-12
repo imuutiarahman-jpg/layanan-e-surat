@@ -1,17 +1,29 @@
 <?php
 include 'koneksi.php';
-if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin') {
-    header("Location: login.php");
+if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['login_via'] ?? '') !== 'panel-admin')) {
+    header("Location: panel-admin.php");
     exit;
 }
 
 // Proses Pengiriman Surat
 if (isset($_POST['kirim_surat'])) {
-    $user_id = $_POST['recipient_id'];
-    $jenis = $_POST['jenis_surat'];
-    $variables = $_POST['var']; // Ambil semua input variabel
-    $data_json = json_encode($variables);
-    $id_permohonan = $_POST['id_permohonan'];
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        die("Token keamanan tidak valid. Silakan muat ulang halaman.");
+    }
+    $user_id = (int)($_POST['recipient_id'] ?? 0);
+    $jenis = trim($_POST['jenis_surat'] ?? '');
+    $variables = isset($_POST['var']) && is_array($_POST['var']) ? $_POST['var'] : [];
+    // Batasi panjang tiap variabel agar tidak membebani DOCX/DB
+    foreach ($variables as $k => $v) {
+        if (!preg_match('/^[A-Za-z0-9_]+$/', (string)$k)) { unset($variables[$k]); continue; }
+        $variables[$k] = mb_substr(trim(strip_tags((string)$v)), 0, 5000);
+    }
+    $data_json = json_encode($variables, JSON_UNESCAPED_UNICODE);
+    $id_permohonan = (int)($_POST['id_permohonan'] ?? 0);
+
+    if ($user_id <= 0 || $jenis === '') {
+        die("Data penerima / jenis surat tidak valid.");
+    }
 
     $surat_final = 'SYSTEM_GENERATED';
 
@@ -28,11 +40,13 @@ if (isset($_POST['kirim_surat'])) {
     if ($stmt) {
         if (mysqli_stmt_execute($stmt)) {
             $id_final = !empty($id_permohonan) ? $id_permohonan : mysqli_insert_id($koneksi);
-            header("Location: cetak_surat.php?id=$id_final");
+            header("Location: cetak_surat.php?id=" . (int)$id_final);
             exit;
+        } else {
+            die("Gagal menyimpan surat. Silakan coba lagi.");
         }
     } else {
-        die("Gagal menyiapkan query (mysqli_prepare). Pastikan kolom 'data_surat' sudah ada di tabel 'permohonan_surat'. Error: " . mysqli_error($koneksi));
+        die("Gagal menyiapkan query. Pastikan kolom 'data_surat' sudah ada di tabel 'permohonan_surat'.");
     }
 }
 
@@ -45,8 +59,8 @@ if ($users_res) {
         $all_users[] = $u;
     }
 } else {
-    // Handle the error gracefully
-    echo "<script>alert('Terjadi kesalahan saat mengambil data pengguna dari database. Pastikan kolom nomor_induk ada di tabel users. Error: " . mysqli_error($koneksi) . "'); window.location='dashboard_admin.php';</script>";
+    // Handle the error gracefully (tanpa membocorkan detail DB)
+    echo "<script>alert('Terjadi kesalahan saat mengambil data pengguna. Silakan coba lagi.'); window.location='dashboard_admin.php';</script>";
     exit;
 }
 
@@ -60,11 +74,20 @@ while($ms = mysqli_fetch_assoc($master_surat_query)) {
 // Ambil data permohonan jika ada ID untuk pre-fill field (Insightful addition)
 $existing_data = [];
 if (isset($_GET['id_permohonan'])) {
-    $id_perm = mysqli_real_escape_string($koneksi, $_GET['id_permohonan']);
-    $p_query = mysqli_query($koneksi, "SELECT data_surat FROM permohonan_surat WHERE id = '$id_perm'");
-    $p_res = mysqli_fetch_assoc($p_query);
-    if ($p_res && $p_res['data_surat']) {
-        $existing_data = json_decode($p_res['data_surat'], true);
+    $id_perm = (int)$_GET['id_permohonan'];
+    if ($id_perm > 0) {
+        $stmt_p = mysqli_prepare($koneksi, "SELECT data_surat FROM permohonan_surat WHERE id = ?");
+        if ($stmt_p) {
+            mysqli_stmt_bind_param($stmt_p, "i", $id_perm);
+            mysqli_stmt_execute($stmt_p);
+            $res_p = mysqli_stmt_get_result($stmt_p);
+            if ($p_res = mysqli_fetch_assoc($res_p)) {
+                if (!empty($p_res['data_surat'])) {
+                    $decoded = json_decode($p_res['data_surat'], true);
+                    if (is_array($decoded)) { $existing_data = $decoded; }
+                }
+            }
+        }
     }
 }
 ?>
@@ -97,7 +120,8 @@ if (isset($_GET['id_permohonan'])) {
         <h2>Buat & Kirim Surat </h2>
         
         <form method="POST" id="mainForm">
-            <input type="hidden" name="id_permohonan" value="<?= isset($_GET['id_permohonan']) ? $_GET['id_permohonan'] : ''; ?>">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+            <input type="hidden" name="id_permohonan" value="<?= isset($_GET['id_permohonan']) ? (int)$_GET['id_permohonan'] : ''; ?>">
             
             <!-- Langkah 1: Pilih Kategori -->
             <div class="form-group">

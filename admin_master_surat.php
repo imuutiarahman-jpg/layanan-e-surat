@@ -1,7 +1,7 @@
 <?php
 include 'koneksi.php';
-if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin') {
-    header("Location: login.php");
+if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['login_via'] ?? '') !== 'panel-admin')) {
+    header("Location: panel-admin.php");
     exit;
 }
 
@@ -27,26 +27,28 @@ function time_ago($timestamp) {
 }
 
 $view = isset($_GET['view']) ? $_GET['view'] : 'mahasiswa';
+if (!in_array($view, ['mahasiswa', 'dosen'], true)) { $view = 'mahasiswa'; }
 $prodi_active = isset($_GET['prodi']) ? $_GET['prodi'] : 'Umum';
 $list_prodi = ['Umum', 'Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
 $full_list_prodi = array_merge($list_prodi, ['Dosen']);
+if ($view === 'mahasiswa' && $prodi_active !== 'Semua' && !in_array($prodi_active, $list_prodi, true)) { $prodi_active = 'Umum'; }
 
-$sql = "SELECT * FROM master_surat_jenis";
+$query = false;
 if ($view == 'dosen') {
-    $sql .= " WHERE prodi = 'Dosen'";
+    $stmt_q = mysqli_prepare($koneksi, "SELECT * FROM master_surat_jenis WHERE prodi = 'Dosen' ORDER BY id ASC");
+    if ($stmt_q) { mysqli_stmt_execute($stmt_q); $query = mysqli_stmt_get_result($stmt_q); }
 } else {
     if ($prodi_active != 'Semua') {
-        $safe_prodi = mysqli_real_escape_string($koneksi, $prodi_active);
-        $sql .= " WHERE prodi = '$safe_prodi'";
+        $stmt_q = mysqli_prepare($koneksi, "SELECT * FROM master_surat_jenis WHERE prodi = ? ORDER BY id ASC");
+        if ($stmt_q) { mysqli_stmt_bind_param($stmt_q, "s", $prodi_active); mysqli_stmt_execute($stmt_q); $query = mysqli_stmt_get_result($stmt_q); }
     } else {
-        $sql .= " WHERE prodi != 'Dosen'";
+        $stmt_q = mysqli_prepare($koneksi, "SELECT * FROM master_surat_jenis WHERE prodi != 'Dosen' ORDER BY id ASC");
+        if ($stmt_q) { mysqli_stmt_execute($stmt_q); $query = mysqli_stmt_get_result($stmt_q); }
     }
 }
-$sql .= " ORDER BY id ASC";
-$query = mysqli_query($koneksi, $sql);
 
 if (!$query) {
-    die("Kesalahan Database: " . mysqli_error($koneksi) . ". Jika tabel hilang, silakan jalankan script SQL untuk tabel 'master_surat_jenis'.");
+    die("Kesalahan Database. Jika tabel hilang, silakan jalankan script SQL untuk tabel 'master_surat_jenis'.");
 }
 ?>
 <!DOCTYPE html>
@@ -143,13 +145,14 @@ if (!$query) {
                         </td>
                         <td class="btn-stack">
                             <!-- PERBAIKAN: Mengarahkan link edit ke halaman edit dengan membawa parameter ID -->
-                            <a href="edit_master_surat.php?id=<?= $row['id'] ?>" class="btn btn-success">✎ Edit</a>
-                            <a href="templates/<?= $row['file_template'] ?>" class="btn btn-info text-white" download>⬇ Download DOCX</a>
+                            <a href="edit_master_surat.php?id=<?= (int)$row['id'] ?>" class="btn btn-success">✎ Edit</a>
+                            <a href="templates/<?= htmlspecialchars(basename($row['file_template']), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-info text-white" download>⬇ Download DOCX</a>
                             <button class="btn btn-warning text-dark" 
-                                    onclick="openUploadModal(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama_surat']) ?>')">
+                                    onclick="openUploadModal(<?= (int)$row['id'] ?>, '<?= htmlspecialchars($row['nama_surat'], ENT_QUOTES, 'UTF-8') ?>')">
                                 🔄 Ganti Template
                             </button>
                             <form action="proses_master_surat.php" method="POST" onsubmit="return confirm('Yakin ingin menghapus jenis surat ini?');" style="display:inline;">
+                                <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                                 <input type="hidden" name="action" value="hapus_jenis">
                                 <input type="hidden" name="id" value="<?= $row['id'] ?>">
                                 <button type="submit" class="btn btn-danger btn-sm mt-1" style="width: 100%; text-align: left;">🗑 Hapus Jenis</button>
@@ -169,6 +172,7 @@ if (!$query) {
 <div class="modal fade" id="tambahModal" tabindex="-1">
     <div class="modal-dialog">
         <form action="proses_master_surat.php" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Tambah Jenis Surat Baru</h5>
@@ -225,6 +229,7 @@ if (!$query) {
 <div class="modal fade" id="uploadModal" tabindex="-1">
     <div class="modal-dialog">
         <form action="proses_master_surat.php" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Ganti Template DOCX</h5>

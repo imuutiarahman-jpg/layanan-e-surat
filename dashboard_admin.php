@@ -1,7 +1,7 @@
 <?php
 include 'koneksi.php';
-if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin') {
-    header("Location: login.php");
+if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || ($_SESSION['login_via'] ?? '') !== 'panel-admin') {
+    header("Location: panel-admin.php");
     exit;
 }
 
@@ -176,7 +176,7 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
                     <td><span style="font-weight: 500;"><?= htmlspecialchars($row['jenis_surat']); ?></span></td>
                     <td style="max-width: 200px;"><small><?= htmlspecialchars($row['catatan_user']); ?></small></td>
                     <td><?php if(!empty($row['berkas_pendukung'])) { ?>
-                            <a href="uploads/<?= htmlspecialchars($row['berkas_pendukung']); ?>" target="_blank" class="btn-view-doc"><i class="fa-solid fa-file-arrow-up"></i> Lihat</a>
+                            <a href="uploads/<?= htmlspecialchars(basename($row['berkas_pendukung']), ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="btn-view-doc"><i class="fa-solid fa-file-arrow-up"></i> Lihat</a>
                         <?php } else { ?>
                             <small style="color: #a0aec0;">Tidak ada berkas</small>
                         <?php } ?>
@@ -192,7 +192,7 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
                         <span class="badge <?= $class; ?>"><?= $row['status']; ?></span>
                     </td>
                     <td>
-                        <a href="admin_kirim_surat.php?id_permohonan=<?= $row['id']; ?>&user_id=<?= $row['user_id']; ?>&role=<?= $row['role']; ?>&jenis=<?= urlencode($row['jenis_surat']); ?>" class="btn-action">
+                        <a href="admin_kirim_surat.php?id_permohonan=<?= (int)$row['id']; ?>&user_id=<?= (int)$row['user_id']; ?>&role=<?= urlencode($row['role']); ?>&jenis=<?= urlencode($row['jenis_surat']); ?>" class="btn-action">
                             <i class="fa-solid fa-pen-to-square"></i> Proses
                         </a>
                     </td>

@@ -2,13 +2,14 @@
 include 'koneksi.php';
 require 'vendor/autoload.php';
 
-// Mengaktifkan error reporting untuk mempermudah debugging jika terjadi kendala lagi
+// Jangan tampilkan error ke browser di production; catat ke log saja
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 
-// Pastikan hanya admin yang bisa mengakses proses ini
-if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin') {
-    header("Location: login.php");
+// Pastikan hanya admin yang bisa mengakses proses ini (wajib via panel-admin)
+if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['login_via'] ?? '') !== 'panel-admin')) {
+    header("Location: panel-admin.php");
     exit;
 }
 
@@ -51,23 +52,62 @@ function detect_extra_vars($file_path) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $action = $_POST['action'];
+    // CSRF: tolak jika token tidak valid (form sudah ditambah hidden input, tidak mengubah tampilan)
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        die("Token keamanan tidak valid. Silakan muat ulang halaman.");
+    }
+    $action = $_POST['action'] ?? '';
+    $allowed_prodi = ['Umum','Dosen','Sistem Informasi','Geografi','Ilmu Komputer','Bisnis Digital','Teknik Sipil','Akuakultur','Agribisnis','Peternakan'];
+
+    // Helper lokal: sanitasi + validasi file docx tanpa mengubah tampilan
+    $validate_docx = function($file_arr) {
+        if (!isset($file_arr) || ($file_arr['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            return [false, 'File belum dipilih / gagal diunggah.'];
+        }
+        if (($file_arr['size'] ?? 0) > 10 * 1024 * 1024) {
+            return [false, 'Ukuran template maksimal 10MB.'];
+        }
+        $ext = strtolower(pathinfo($file_arr['name'], PATHINFO_EXTENSION));
+        if ($ext !== 'docx') {
+            return [false, 'Hanya file .docx yang diizinkan.'];
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = $finfo ? finfo_file($finfo, $file_arr['tmp_name']) : '';
+        if ($finfo) finfo_close($finfo);
+        // docx = zip
+        if (!in_array($mime, ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/octet-stream'], true)) {
+            return [false, 'Isi file bukan dokumen Word yang valid.'];
+        }
+        return [true, ''];
+    };
+    $safe_filename = function($orig) {
+        $base = basename($orig);
+        // Hanya huruf, angka, spasi, _ - . ; selain itu jadi _
+        $base = preg_replace('/[^A-Za-z0-9 _\-\.]/', '_', $base);
+        $base = preg_replace('/_+/', '_', $base);
+        if (strtolower(substr($base, -5)) !== '.docx') { $base .= '.docx'; }
+        // Prefix waktu agar tidak overwrite template lain
+        return time() . '_' . $base;
+    };
 
     // 1. PENANGANAN AKSI TAMBAH DATA
     if ($action == 'tambah_jenis') {
-        $nama_surat = mysqli_real_escape_string($koneksi, $_POST['nama_surat']);
-        $prodi = mysqli_real_escape_string($koneksi, $_POST['prodi']);
+        $nama_surat = trim($_POST['nama_surat'] ?? '');
+        $prodi = $_POST['prodi'] ?? 'Umum';
+        if (!in_array($prodi, $allowed_prodi, true)) { $prodi = 'Umum'; }
         $require_berkas = isset($_POST['require_berkas']) ? 1 : 0;
-        $info_berkas = mysqli_real_escape_string($koneksi, $_POST['info_berkas']);
-        $updated_by = $_SESSION['nama'] ?? 'Admin'; 
+        $info_berkas = trim($_POST['info_berkas'] ?? '');
+        $updated_by = $_SESSION['nama'] ?? 'Admin';
+        if ($nama_surat === '') { die("Nama jenis surat wajib diisi."); }
 
-        // Logika upload file template .docx
-        $file_name = $_FILES['file_template']['name'];
+        [$ok, $msg] = $validate_docx($_FILES['file_template'] ?? null);
+        if (!$ok) { die(esc($msg)); }
+        $file_name = $safe_filename($_FILES['file_template']['name']);
         $file_tmp = $_FILES['file_template']['tmp_name'];
         
         // Pastikan folder "templates" ada, jika belum otomatis dibuat
         if (!is_dir('templates')) {
-            mkdir('templates', 0777, true);
+            mkdir('templates', 0755, true);
         }
 
         // Pindahkan ke folder templates
@@ -77,38 +117,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $variabel_tambahan = detect_extra_vars($path);
 
             if (strpos($variabel_tambahan, 'Error:') === 0) {
-                echo $variabel_tambahan;
-                exit;
+                @unlink($path);
+                die(esc($variabel_tambahan));
             }
 
-            // Jalankan Query Insert ke Database
-            $query = "INSERT INTO master_surat_jenis (nama_surat, prodi, variabel_tambahan, file_template, require_berkas, info_berkas, updated_by, updated_at) 
-                      VALUES ('$nama_surat', '$prodi', '$variabel_tambahan', '$file_name', '$require_berkas', '$info_berkas', '$updated_by', NOW())";
+            // Jalankan Query Insert ke Database (prepared)
+            $stmt = mysqli_prepare($koneksi, "INSERT INTO master_surat_jenis (nama_surat, prodi, variabel_tambahan, file_template, require_berkas, info_berkas, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+            mysqli_stmt_bind_param($stmt, "ssssiss", $nama_surat, $prodi, $variabel_tambahan, $file_name, $require_berkas, $info_berkas, $updated_by);
             
-            if (mysqli_query($koneksi, $query)) {
+            if (mysqli_stmt_execute($stmt)) {
                 // Berhasil, kembalikan ke halaman utama
                 header("Location: " . $halaman_utama . "?status=sukses_tambah");
                 exit;
             } else {
-                echo "Gagal menyimpan data ke database: " . mysqli_error($koneksi);
+                @unlink($path);
+                die("Gagal menyimpan data. Silakan coba lagi.");
             }
         } else {
-            echo "Gagal mengunggah file template. Pastikan folder 'templates' sudah ada dan memiliki izin akses write.";
+            die("Gagal mengunggah file template. Pastikan folder 'templates' sudah ada dan memiliki izin akses write.");
         }
     }
 
     // 2. PENANGANAN AKSI GANTI TEMPLATE
     elseif ($action == 'upload_template') {
-        $id_jenis = mysqli_real_escape_string($koneksi, $_POST['id_jenis']);
+        $id_jenis = (int)($_POST['id_jenis'] ?? 0);
         $updated_by = $_SESSION['nama'] ?? 'Admin';
+        if ($id_jenis <= 0) { die("ID tidak valid."); }
 
-        // Logika upload file template baru (menggunakan name="file_rtf" sesuai dengan modal HTML Anda)
-        $file_name = $_FILES['file_rtf']['name'];
+        [$ok, $msg] = $validate_docx($_FILES['file_rtf'] ?? null);
+        if (!$ok) { die(esc($msg)); }
+        $file_name = $safe_filename($_FILES['file_rtf']['name']);
         $file_tmp = $_FILES['file_rtf']['tmp_name'];
 
         // Pastikan folder templates ada
         if (!is_dir('templates')) {
-            mkdir('templates', 0777, true);
+            mkdir('templates', 0755, true);
         }
 
         if (move_uploaded_file($file_tmp, "templates/" . $file_name)) {
@@ -117,66 +160,63 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $variabel_tambahan = detect_extra_vars($path);
 
             if (strpos($variabel_tambahan, 'Error:') === 0) {
-                echo $variabel_tambahan;
-                exit;
+                @unlink($path);
+                die(esc($variabel_tambahan));
             }
 
-            // Jalankan Query Update berdasarkan ID Jenis Surat
-            $query = "UPDATE master_surat_jenis 
-                      SET file_template = '$file_name', variabel_tambahan = '$variabel_tambahan', updated_by = '$updated_by', updated_at = NOW() 
-                      WHERE id = '$id_jenis'";
+            // Jalankan Query Update berdasarkan ID Jenis Surat (prepared)
+            $stmt = mysqli_prepare($koneksi, "UPDATE master_surat_jenis SET file_template = ?, variabel_tambahan = ?, updated_by = ?, updated_at = NOW() WHERE id = ?");
+            mysqli_stmt_bind_param($stmt, "sssi", $file_name, $variabel_tambahan, $updated_by, $id_jenis);
             
-            if (mysqli_query($koneksi, $query)) {
+            if (mysqli_stmt_execute($stmt)) {
                 // Berhasil, kembalikan ke halaman utama
                 header("Location: " . $halaman_utama . "?status=sukses_ganti");
                 exit;
             } else {
-                echo "Gagal memperbarui template di database: " . mysqli_error($koneksi);
+                @unlink($path);
+                die("Gagal memperbarui template. Silakan coba lagi.");
             }
         } else {
-            echo "Gagal mengunggah file template baru.";
+            die("Gagal mengunggah file template baru.");
         }
     }
 
     // 3. PENANGANAN AKSI EDIT DATA (Nama & Format)
     elseif ($action == 'edit_jenis') {
-        $id = mysqli_real_escape_string($koneksi, $_POST['id']);
-        $nama_surat = mysqli_real_escape_string($koneksi, $_POST['nama_surat']);
-        $prodi = mysqli_real_escape_string($koneksi, $_POST['prodi']);
+        $id = (int)($_POST['id'] ?? 0);
+        $nama_surat = trim($_POST['nama_surat'] ?? '');
+        $prodi = $_POST['prodi'] ?? 'Umum';
+        if (!in_array($prodi, $allowed_prodi, true)) { $prodi = 'Umum'; }
         $require_berkas = isset($_POST['require_berkas']) ? 1 : 0;
-        $info_berkas = mysqli_real_escape_string($koneksi, $_POST['info_berkas']);
-        $variabel_tambahan = mysqli_real_escape_string($koneksi, $_POST['variabel_tambahan']);
+        $info_berkas = trim($_POST['info_berkas'] ?? '');
+        $variabel_tambahan = trim($_POST['variabel_tambahan'] ?? '');
         $updated_by = $_SESSION['nama'] ?? 'Admin';
+        if ($id <= 0 || $nama_surat === '') { die("Data tidak valid."); }
 
-        $query = "UPDATE master_surat_jenis SET 
-                  nama_surat = '$nama_surat', 
-                  prodi = '$prodi',
-                  require_berkas = '$require_berkas',
-                  info_berkas = '$info_berkas',
-                  variabel_tambahan = '$variabel_tambahan', 
-                  updated_by = '$updated_by', 
-                  updated_at = NOW() 
-                  WHERE id = '$id'";
+        $stmt = mysqli_prepare($koneksi, "UPDATE master_surat_jenis SET nama_surat=?, prodi=?, require_berkas=?, info_berkas=?, variabel_tambahan=?, updated_by=?, updated_at=NOW() WHERE id=?");
+        mysqli_stmt_bind_param($stmt, "ssisssi", $nama_surat, $prodi, $require_berkas, $info_berkas, $variabel_tambahan, $updated_by, $id);
 
-        if (mysqli_query($koneksi, $query)) {
+        if (mysqli_stmt_execute($stmt)) {
             header("Location: " . $halaman_utama . "?status=sukses_edit");
             exit;
         } else {
-            echo "Gagal memperbarui data: " . mysqli_error($koneksi);
+            die("Gagal memperbarui data. Silakan coba lagi.");
         }
     }
 
     // 4. PENANGANAN AKSI HAPUS DATA
     elseif ($action == 'hapus_jenis') {
-        $id = mysqli_real_escape_string($koneksi, $_POST['id']);
+        $id = (int)($_POST['id'] ?? 0);
+        if ($id <= 0) { die("ID tidak valid."); }
         
-        $query = "DELETE FROM master_surat_jenis WHERE id = '$id'";
+        $stmt = mysqli_prepare($koneksi, "DELETE FROM master_surat_jenis WHERE id = ?");
+        mysqli_stmt_bind_param($stmt, "i", $id);
 
-        if (mysqli_query($koneksi, $query)) {
+        if (mysqli_stmt_execute($stmt)) {
             header("Location: " . $halaman_utama . "?status=sukses_hapus");
             exit;
         } else {
-            echo "Gagal menghapus data: " . mysqli_error($koneksi);
+            die("Gagal menghapus data. Silakan coba lagi.");
         }
     }
 }
