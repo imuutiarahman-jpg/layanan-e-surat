@@ -14,10 +14,9 @@ DirectoryIndex index.php login.php
 </FilesMatch>
 
 # 4. Alias ramah untuk panel admin
-# Supaya alamat seperti /admin atau /panel-admin tidak berakhir 404.
+# Supaya alamat seperti /admin, /panel-admin, atau /login-admin tidak 404.
 # File aslinya tetap panel-admin.php. Aman jika mod_rewrite tidak aktif.
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteRule ^admin/?$ panel-admin.php [L]
-  RewriteRule ^panel-admin/?$ panel-admin.php [L]
+  RewriteRule ^(admin|panel-admin|login-admin)/?$ panel-admin.php [L]
 </IfModule>
