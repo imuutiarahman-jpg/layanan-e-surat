@@ -44,6 +44,7 @@ if (isset($_POST['login'])) {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Login | E-Surat</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -92,8 +93,9 @@ if (isset($_POST['login'])) {
         .footer-links a { color: #1c3faa; text-decoration: none; font-weight: 600; }
         .demo-hint { font-size: 11px; text-align: center; color: #8a8d91; margin-top: 20px; border-top: 1px solid #ebedf0; padding-top: 15px; }
     </style>
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="auth-page">
 <div class="login-box">
     <div style="text-align: center; margin-bottom: 20px;">
         <img src="logo/logo.png" alt="Logo" style="max-height: 160px;">

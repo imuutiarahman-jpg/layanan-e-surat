@@ -188,6 +188,7 @@ if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
         <html lang="id">
         <head>
             <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>Pratinjau Surat (Admin)</title>
             <style>
                 body { font-family: 'Inter', sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
@@ -197,8 +198,9 @@ if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
                 .btn-edit { background: #f39c12; }
                 .btn-download { background: #2ecc71; }
             </style>
+            <link rel="stylesheet" href="responsive.css">
         </head>
-        <body>
+        <body class="preview-page">
             <div class="container">
                 <h3>Pratinjau Surat: <?= htmlspecialchars($data['jenis_surat']) ?></h3>
                 <p>Surat draf berhasil digenerate. Silakan unduh untuk ditandatangani, lalu unggah kembali versi finalnya.</p>

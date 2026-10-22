@@ -94,6 +94,7 @@ if (isset($_GET['id_permohonan'])) {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Kirim Surat Baru | Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <!-- Load jQuery dan Summernote untuk fitur Rich Text (RTF) -->
@@ -112,8 +113,9 @@ if (isset($_GET['id_permohonan'])) {
         button { background: #2ecc71; color: white; border: none; padding: 15px; width: 100%; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 20px; }
         .back-link { display: inline-block; margin-bottom: 20px; text-decoration: none; color: #7f8c8d; font-size: 14px; }
     </style>
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="form-page">
     <div class="container">
         <a href="dashboard_admin.php" class="back-link">← Kembali ke Dashboard</a>
 

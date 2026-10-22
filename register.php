@@ -55,6 +55,7 @@ if (isset($_POST['register'])) {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Daftar Akun Baru</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
@@ -63,8 +64,9 @@ if (isset($_POST['register'])) {
         button { background: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; }
         button:hover { background: #218838; }
     </style>
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="auth-page">
 <div class="register-box">
     <h3 style="text-align:center;">Daftar Akun Baru</h3>
     <?php if(isset($error)) echo "<p style='color:red; font-size:13px;'>" . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . "</p>"; ?>

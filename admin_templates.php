@@ -60,6 +60,7 @@ if (isset($_POST['upload_template'])) {
 <html lang="id">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Kelola Template Surat | Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -80,8 +81,9 @@ if (isset($_POST['upload_template'])) {
         .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .upload-form { margin-top: 10px; background: #f9f9f9; padding: 15px; border-radius: 8px; display: none; border: 1px dashed #ddd; text-align: left; }
     </style>
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="admin-list">
     <div class="header">
         <h2>Kelola Master Template (.docx)</h2>
         <a href="dashboard_admin.php">Kembali ke Dashboard</a>
@@ -100,6 +102,7 @@ if (isset($_POST['upload_template'])) {
             <p style="font-size: 13px; color: #7f8c8d; margin-bottom: 20px;">
                 Gunakan placeholder seperti <b>${nama}</b>, <b>${nim}</b>, atau <b>${judul}</b> di dalam file Word Anda agar data terisi otomatis.
             </p>
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
@@ -136,6 +139,7 @@ if (isset($_POST['upload_template'])) {
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </body>

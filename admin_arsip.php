@@ -92,6 +92,7 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Arsip Surat | Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -119,8 +120,9 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
         .search-box input { padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; width: 250px; outline: none; }
         .search-box button { background: #667eea; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
     </style>
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="admin-list">
     <div class="header">
         <div style="display: flex; align-items: center;">
             <img src="logo/logo.png" alt="Logo" style="height: 90px; margin-right: 15px;">
@@ -167,6 +169,7 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
                 <?= !empty($prodi_filter) ? " - Prodi $prodi_filter" : "" ?>
             </h3>
 
+            <div class="table-wrap">
             <table>
                 <tr>
                     <th>User & Info</th>
@@ -213,9 +216,10 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
                 </tr>
                 <?php } ?>
                 <?php if(mysqli_num_rows($query) == 0) { ?>
-                    <tr><td colspan="5" style="text-align:center;">Belum ada arsip surat.</td></tr>
+                    <tr><td colspan="7" style="text-align:center;">Belum ada arsip surat.</td></tr>
                 <?php } ?>
             </table>
+            </div>
         </div>
     </div>
 </body>

@@ -69,6 +69,7 @@ if (isset($_POST['login'])) {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Panel Admin | E-Surat</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -117,8 +118,9 @@ if (isset($_POST['login'])) {
         .footer-links a { color: #1c3faa; text-decoration: none; font-weight: 600; }
         .badge-admin { display: inline-block; background: #111827; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 1px; padding: 4px 12px; border-radius: 20px; margin-bottom: 12px; }
     </style>
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="auth-page">
 <div class="login-box">
     <div style="text-align: center; margin-bottom: 20px;">
         <img src="logo/logo.png" alt="Logo" style="max-height: 160px;">

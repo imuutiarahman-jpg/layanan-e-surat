@@ -1,0 +1,280 @@
+/* ==========================================================================
+   Responsif mobile untuk E-Surat
+   File ini dimuat SETELAH <style> inline tiap halaman, sehingga aturan di
+   dalam media query menimpa layout desktop tanpa mengubah tampilan desktop.
+   ========================================================================== */
+
+/* Box model konsisten: padding tidak lagi menambah lebar elemen.
+   Ini memperbaiki kotak login/register/form yang sebelumnya melebar. */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+img {
+    max-width: 100%;
+}
+
+/* Wrapper tabel agar bisa digeser horizontal di layar kecil */
+.table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* --------------------------------------------------------------------------
+   1. Halaman autentikasi: login.php, panel-admin.php, register.php
+   -------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+    body.auth-page {
+        height: auto;
+        min-height: 100svh;
+        padding: 20px 16px;
+        justify-content: center;
+    }
+
+    body.auth-page .login-box,
+    body.auth-page .register-box {
+        margin: 0;
+        width: 100%;
+        max-width: 400px;
+        padding: 24px;
+    }
+
+    body.auth-page::before {
+        background-attachment: scroll;
+    }
+
+    body.auth-page h3 {
+        font-size: 18px;
+    }
+
+    body.auth-page .footer-links {
+        margin-top: 18px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   2. Dashboard: dashboard_mhs.php, dashboard_dosen.php, dashboard_admin.php
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+    body.dash-page .navbar {
+        padding: 10px 14px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    body.dash-page .navbar .brand {
+        font-size: 16px;
+        line-height: 1.2;
+    }
+
+    body.dash-page .navbar .brand img {
+        height: 46px !important;
+        margin-right: 8px !important;
+    }
+
+    body.dash-page .navbar .nav-links {
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    body.dash-page .navbar .nav-btn {
+        padding: 6px 9px;
+        font-size: 11px;
+    }
+
+    body.dash-page .navbar .logout-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    body.dash-page .container {
+        margin: 16px auto;
+        padding: 0 12px;
+    }
+
+    body.dash-page .welcome-section {
+        margin-bottom: 18px;
+    }
+
+    body.dash-page .welcome-section h2 {
+        font-size: 19px;
+    }
+
+    body.dash-page .stats-grid {
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    body.dash-page .stat-card {
+        padding: 14px;
+    }
+
+    body.dash-page .stat-card .value {
+        font-size: 20px;
+    }
+
+    body.dash-page .card {
+        padding: 16px;
+    }
+
+    body.dash-page .main-grid {
+        gap: 16px;
+    }
+
+    body.dash-page .modal-content {
+        width: 94%;
+        padding: 18px;
+    }
+
+    body.dash-page table {
+        font-size: 13px;
+    }
+
+    body.dash-page th,
+    body.dash-page td {
+        padding: 10px 8px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   3. Form admin: admin_kirim_surat.php
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+    body.form-page {
+        padding: 14px;
+    }
+
+    body.form-page .container {
+        padding: 18px;
+    }
+
+    body.form-page h2 {
+        font-size: 19px;
+    }
+
+    body.form-page .note-toolbar {
+        flex-wrap: wrap;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   4. Daftar admin: admin_arsip.php, admin_templates.php
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+    body.admin-list .header {
+        padding: 14px 16px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    body.admin-list .header h2 {
+        margin: 0;
+        font-size: 18px;
+    }
+
+    body.admin-list .header img {
+        height: 48px !important;
+        margin-right: 10px !important;
+    }
+
+    body.admin-list .header a {
+        padding: 7px 10px;
+        font-size: 12px;
+    }
+
+    body.admin-list .content {
+        padding: 16px;
+    }
+
+    body.admin-list .card {
+        padding: 16px;
+    }
+
+    body.admin-list .nav-tabs {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    body.admin-list .tab-links {
+        flex-wrap: wrap;
+    }
+
+    body.admin-list .search-box {
+        width: 100%;
+    }
+
+    body.admin-list .search-box input {
+        width: 100%;
+        min-width: 0;
+    }
+
+    body.admin-list .prodi-filter {
+        gap: 6px;
+    }
+
+    body.admin-list table {
+        font-size: 12.5px;
+    }
+
+    body.admin-list th,
+    body.admin-list td {
+        padding: 10px 8px;
+    }
+
+    body.admin-list code {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   5. Pratinjau surat admin: cetak_surat.php (halaman pratinjau)
+   -------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+    body.preview-page {
+        padding: 16px;
+        align-items: flex-start;
+    }
+
+    body.preview-page .container {
+        padding: 22px;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   6. Halaman Bootstrap: admin_master_surat.php, edit_master_surat.php
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+    .navbar-brand img {
+        width: 48px;
+        height: 48px;
+    }
+
+    .nav-tabs {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .tab-links {
+        flex-wrap: wrap;
+    }
+
+    .btn-stack .btn {
+        font-size: 0.75rem;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   7. Umum
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+    /* 16px mencegah iOS auto-zoom saat input difokuskan */
+    input,
+    select,
+    textarea {
+        font-size: 16px;
+    }
+}

@@ -25,6 +25,7 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dashboard Admin | E-Surat</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -87,8 +88,9 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
         .user-list-item .count-badge { background: #f0f2f5; padding: 2px 10px; border-radius: 10px; font-weight: 700; color: var(--primary); font-size: 12px; }
         @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="dash-page">
     <div class="navbar">
         <a href="dashboard_admin.php" class="brand">
             <img src="logo/logo.png" alt="Logo" style="height: 60px; margin-right: 15px;">
