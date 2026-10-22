@@ -1,40 +1,45 @@
 <?php
 include 'koneksi.php';
 
+$error_msg = '';
+
 if (isset($_POST['login'])) {
-    $username = trim($_POST['username']);
-    $password = $_POST['password'];
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
     $role = isset($_POST['role']) ? $_POST['role'] : '';
 
     // Login publik hanya untuk mahasiswa/dosen. Admin wajib via panel-admin.php
     if (!in_array($role, ['mahasiswa', 'dosen'], true)) {
-        $error = true;
+        $error_msg = "Pilih role Mahasiswa atau Dosen. Akun admin wajib masuk lewat Panel Admin.";
     } else {
-    $stmt = mysqli_prepare($koneksi, "SELECT * FROM users WHERE username=? AND role=?");
-    mysqli_stmt_bind_param($stmt, "ss", $username, $role);
-    mysqli_stmt_execute($stmt);
-    $result = mysqli_stmt_get_result($stmt);
+        $stmt = mysqli_prepare($koneksi, "SELECT * FROM users WHERE username=? AND role=?");
+        if (!$stmt) {
+            $error_msg = "Sistem login sedang bermasalah. Silakan coba lagi nanti.";
+        } else {
+            mysqli_stmt_bind_param($stmt, "ss", $username, $role);
+            mysqli_stmt_execute($stmt);
+            $result = mysqli_stmt_get_result($stmt);
 
-    if ($row = mysqli_fetch_assoc($result)) {
-        if (password_verify($password, $row['password']) && in_array($row['role'], ['mahasiswa', 'dosen'], true)) {
-            session_regenerate_id(true);
-            $_SESSION['login'] = true;
-            $_SESSION['user_id'] = (int)$row['id'];
-            $_SESSION['nama'] = $row['nama_lengkap'];
-            $_SESSION['role'] = $row['role'];
+            if ($result && ($row = mysqli_fetch_assoc($result))) {
+                if (password_verify($password, $row['password'])) {
+                    session_regenerate_id(true);
+                    $_SESSION['login'] = true;
+                    $_SESSION['user_id'] = (int)$row['id'];
+                    $_SESSION['nama'] = $row['nama_lengkap'];
+                    $_SESSION['role'] = $row['role'];
 
-            if ($row['role'] == 'mahasiswa') {
-                header("Location: dashboard_mhs.php");
-            } else {
-                header("Location: dashboard_dosen.php");
+                    if ($row['role'] == 'mahasiswa') {
+                        header("Location: dashboard_mhs.php");
+                    } else {
+                        header("Location: dashboard_dosen.php");
+                    }
+                    exit;
+                }
             }
-            exit;
+            $error_msg = "Username, password, atau role tidak cocok. Periksa kembali role yang dipilih.";
         }
-    }
-    $error = true;
     } // tutup else whitelist role
 }
-?>
 ?>
 <!DOCTYPE html>
 <html>
@@ -95,7 +100,7 @@ if (isset($_POST['login'])) {
     </div>
     <h3 style="margin-bottom: 0;">Layanan E-Surat</h3>
     <h3 style="margin-top: 5px;">Fakultas Sains dan Ilmu Komputer</h3>
-    <?php if(isset($error)) echo "<div class='error-msg'>Username atau Password salah!</div>"; ?>
+    <?php if($error_msg !== '') echo "<div class='error-msg'>" . htmlspecialchars($error_msg, ENT_QUOTES, 'UTF-8') . "</div>"; ?>
     <form method="POST" action="">
         <input type="text" name="username" placeholder="Username" required>
         <input type="password" name="password" placeholder="Password" required>
@@ -108,6 +113,9 @@ if (isset($_POST['login'])) {
     </form>
     <div class="footer-links">
         Belum punya akun? <a href="register.php">Daftar Sekarang</a>
+    </div>
+    <div class="footer-links" style="margin-top: 12px;">
+        <span style="font-size: 13px;">Admin? <a href="panel-admin.php">Masuk lewat Panel Admin</a></span>
     </div>
     
 </div>

@@ -44,10 +44,12 @@ CREATE TABLE IF NOT EXISTS templates (
 );
 
 -- Default users (Password for all is '123')
+-- Hash di bawah ini sudah diverifikasi cocok dengan password '123' (bcrypt).
+-- Admin hanya bisa login lewat panel-admin.php, mahasiswa/dosen lewat login.php.
 INSERT INTO users (username, password, nama_lengkap, role) VALUES
-('admin', '$2y$10$hKDVYxLefVHV/vtuPhWD3OigtRyOykRLDdU.L.v2n.4fV6NLRN952', 'Administrator', 'admin'),
-('mahasiswa', '$2y$10$hKDVYxLefVHV/vtuPhWD3OigtRyOykRLDdU.L.v2n.4fV6NLRN952', 'Mahasiswa User', 'mahasiswa'),
-('dosen', '$2y$10$hKDVYxLefVHV/vtuPhWD3OigtRyOykRLDdU.L.v2n.4fV6NLRN952', 'Dosen User', 'dosen');
+('admin', '$2y$10$wl2yol7IdVzL7MrRPOSSeuybKROzmA54d.PcMWQdON0qbMIRQ1Zsa', 'Administrator', 'admin'),
+('mahasiswa', '$2y$10$wl2yol7IdVzL7MrRPOSSeuybKROzmA54d.PcMWQdON0qbMIRQ1Zsa', 'Mahasiswa User', 'mahasiswa'),
+('dosen', '$2y$10$wl2yol7IdVzL7MrRPOSSeuybKROzmA54d.PcMWQdON0qbMIRQ1Zsa', 'Dosen User', 'dosen');
 
 -- Tabel Manajemen Jenis Surat & Template
 CREATE TABLE IF NOT EXISTS master_surat_jenis (

@@ -46,6 +46,7 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
         .navbar .nav-links { display: flex; gap: 20px; align-items: center; }
         .navbar .nav-btn { text-decoration: none; font-weight: 600; font-size: 13px; padding: 8px 16px; border-radius: 6px; transition: 0.3s; }
         .btn-master { background: #f3e8ff; color: #7e22ce; }
+        .btn-template { background: #fef3c7; color: #b45309; }
         .btn-arsip { background: #dcfce7; color: #15803d; }
         .btn-logout { background: #fee2e2; color: #b91c1c; margin-left: 15px; } /* Memberi jarak extra untuk tombol Keluar */
         
@@ -95,6 +96,7 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
         </a>
         <div class="nav-links">
             <a href="admin_master_surat.php" class="nav-btn btn-master"><i class="fa-solid fa-file-shield"></i> Kelola Jenis Surat</a>
+            <a href="admin_templates.php" class="nav-btn btn-template"><i class="fa-solid fa-file-word"></i> Template Surat</a>
             <a href="admin_arsip.php" class="nav-btn btn-arsip"><i class="fa-solid fa-box-archive"></i> Arsip</a>
             <a href="logout.php" class="nav-btn btn-logout"><i class="fa-solid fa-power-off"></i> Keluar</a>
         </div>
