@@ -1,22 +1,38 @@
 # E-Surat - Pengaman hosting
-# File ini BARU, tidak mengubah kode PHP yang sudah ada
+# File ini tidak mengubah kode PHP, hanya menutup akses yang tidak perlu.
 
-# 1. Matikan daftar file "Index of /"
-Options -Indexes
+# 1. Matikan daftar file "Index of /" dan MultiViews
+Options -Indexes -MultiViews
+ServerSignature Off
 
 # 2. File yang dibuka saat akses domain root "/"
 DirectoryIndex index.php login.php
 
 # 3. Tutup akses HTTP langsung ke file sensitif
-# include/require dari PHP tetap jalan (akses filesystem), yang diblokir hanya akses via browser
-<FilesMatch "^(database\.sql|composer\.(json|lock)|koneksi\.php|\.htaccess)$">
+<FilesMatch "^(database\.sql|composer\.(json|lock)|koneksi\.php|\.htaccess|\.htpasswd|\.env.*|\.user\.ini|\.DS_Store)$">
   Require all denied
 </FilesMatch>
 
-# 4. Alias ramah untuk panel admin
-# Supaya alamat seperti /admin, /panel-admin, atau /login-admin tidak 404.
-# File aslinya tetap panel-admin.php. Aman jika mod_rewrite tidak aktif.
+# 4. Header keamanan untuk semua respons (termasuk file statis)
+<IfModule mod_headers.c>
+  # setifempty: header dari PHP tidak digandakan
+  Header always setifempty X-Content-Type-Options "nosniff"
+  Header always setifempty X-Frame-Options "SAMEORIGIN"
+  Header always setifempty Referrer-Policy "strict-origin-when-cross-origin"
+  Header always setifempty Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()"
+  Header always setifempty X-Permitted-Cross-Domain-Policies "none"
+</IfModule>
+
+# 5. Blokir akses ke folder/file internal
 <IfModule mod_rewrite.c>
   RewriteEngine On
+
+  # Jangan pernah sajikan .git/.env atau isi folder vendor
+  RewriteRule (^|/)\.git(/|$) - [F,L]
+  RewriteRule (^|/)\.env - [F,L]
+  RewriteRule ^vendor(/|$) - [F,L]
+
+  # Alias ramah untuk panel admin
+  # Supaya alamat seperti /admin, /panel-admin, atau /login-admin tidak 404.
   RewriteRule ^(admin|panel-admin|login-admin)/?$ panel-admin.php [L]
 </IfModule>

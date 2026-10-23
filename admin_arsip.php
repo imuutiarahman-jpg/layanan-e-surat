@@ -5,13 +5,20 @@ if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['l
     exit;
 }
 
-// Handle Delete Request (dilindungi CSRF, tampilan link tetap sama)
-if (isset($_GET['delete_id'])) {
-    if (!csrf_verify($_GET['csrf'] ?? '')) {
+$allowed_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
+$list_prodi = $allowed_prodi;
+
+// Handle Delete Request — wajib POST + CSRF (cegah hapus via link/prefetch)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
         die("Token keamanan tidak valid. Silakan kembali dan muat ulang halaman.");
     }
-    $delete_id = (int)$_GET['delete_id'];
+    $delete_id = (int)$_POST['delete_id'];
     if ($delete_id <= 0) { die("ID tidak valid."); }
+
+    $view_r = in_array($_POST['view'] ?? '', ['mahasiswa', 'dosen'], true) ? $_POST['view'] : 'mahasiswa';
+    $prodi_r = in_array($_POST['prodi'] ?? '', $allowed_prodi, true) ? $_POST['prodi'] : '';
+    $search_r = mb_substr(trim($_POST['search'] ?? ''), 0, 100);
 
     // Optional: Delete associated files if 'surat_jadi' is not 'SYSTEM_GENERATED'
     // This part is commented out for now, but can be uncommented if file deletion is desired.
@@ -27,24 +34,25 @@ if (isset($_GET['delete_id'])) {
     */
 
     // Delete the permohonan_surat entry
+    $deleted = false;
     $delete_stmt = mysqli_prepare($koneksi, "DELETE FROM permohonan_surat WHERE id = ?");
-    $view_r = $_GET['view'] ?? 'mahasiswa';
-    $prodi_r = $_GET['prodi'] ?? '';
-    $search_r = $_GET['search'] ?? '';
     if ($delete_stmt) {
         mysqli_stmt_bind_param($delete_stmt, "i", $delete_id);
-        mysqli_stmt_execute($delete_stmt);
-        echo "<script>alert('Data surat berhasil dihapus.'); window.location='admin_arsip.php?view=" . htmlspecialchars($view_r) . "&prodi=" . urlencode($prodi_r) . "&search=" . urlencode($search_r) . "';</script>";
-    } else {
-        echo "<script>alert('Gagal menghapus data. Silakan coba lagi.'); window.location='admin_arsip.php?view=" . htmlspecialchars($view_r) . "&prodi=" . urlencode($prodi_r) . "&search=" . urlencode($search_r) . "';</script>";
+        $deleted = mysqli_stmt_execute($delete_stmt);
     }
+
+    $params = ['view' => $view_r];
+    if ($prodi_r !== '') { $params['prodi'] = $prodi_r; }
+    if ($search_r !== '') { $params['search'] = $search_r; }
+    $params[$deleted ? 'deleted' : 'delete_error'] = 1;
+
+    header("Location: admin_arsip.php?" . http_build_query($params));
     exit;
 }
 
 // Filter Logika (whitelist agar tampilan tetap, query aman)
 $view = isset($_GET['view']) ? $_GET['view'] : 'mahasiswa';
 if (!in_array($view, ['mahasiswa', 'dosen'], true)) { $view = 'mahasiswa'; }
-$allowed_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
 $prodi_filter = isset($_GET['prodi']) ? $_GET['prodi'] : '';
 if ($prodi_filter !== '' && !in_array($prodi_filter, $allowed_prodi, true)) { $prodi_filter = ''; }
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
@@ -67,6 +75,9 @@ if (!empty($search)) {
 $sql .= " ORDER BY permohonan_surat.id DESC";
 
 $stmt_arsip = mysqli_prepare($koneksi, $sql);
+if (!$stmt_arsip) {
+    die("Gagal menyiapkan data arsip. Silakan coba lagi.");
+}
 
 if (!empty($prodi_filter) && !empty($search)) {
     $s_term = "%$search%";
@@ -87,7 +98,6 @@ if (!$query) {
     die("Gagal mengambil data arsip. Silakan coba lagi.");
 }
 
-$list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital', 'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan'];
 ?>
 <!DOCTYPE html>
 <html>
@@ -119,6 +129,9 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
         .search-box { display: flex; gap: 5px; }
         .search-box input { padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; width: 250px; outline: none; }
         .search-box button { background: #667eea; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .alert { padding: 14px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
     </style>
     <link rel="stylesheet" href="responsive.css">
 </head>
@@ -136,6 +149,11 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
 
     <div class="content">
         <div class="card">
+            <?php if (isset($_GET['deleted'])): ?>
+                <div class="alert alert-success">Data surat berhasil dihapus.</div>
+            <?php elseif (isset($_GET['delete_error'])): ?>
+                <div class="alert alert-error">Gagal menghapus data. Silakan coba lagi.</div>
+            <?php endif; ?>
             <div class="nav-tabs">
                 <div class="tab-links">
                     <a href="admin_arsip.php?view=mahasiswa" class="<?= $view=='mahasiswa'?'active':'' ?>">Arsip Mahasiswa</a>
@@ -166,7 +184,7 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
 
             <h3 style="margin-bottom: 25px;">
                 Data Arsip: <?= ucfirst($view) ?> 
-                <?= !empty($prodi_filter) ? " - Prodi $prodi_filter" : "" ?>
+                <?= !empty($prodi_filter) ? " - Prodi " . htmlspecialchars($prodi_filter, ENT_QUOTES, 'UTF-8') : "" ?>
             </h3>
 
             <div class="table-wrap">
@@ -211,7 +229,14 @@ $list_prodi = ['Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital'
                         <?php } ?>
                     </td>
                     <td>
-                        <a href="admin_arsip.php?delete_id=<?= (int)$row['id'] ?>&view=<?= htmlspecialchars($view) ?>&prodi=<?= urlencode($prodi_filter) ?>&search=<?= urlencode($search) ?>&csrf=<?= urlencode(csrf_token()) ?>" onclick="return confirm('Apakah Anda yakin ingin menghapus data arsip ini?');" class="btn-delete">Hapus</a>
+                        <form method="POST" action="admin_arsip.php" style="margin: 0;" onsubmit="return confirm('Apakah Anda yakin ingin menghapus data arsip ini?');">
+                            <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+                            <input type="hidden" name="delete_id" value="<?= (int)$row['id'] ?>">
+                            <input type="hidden" name="view" value="<?= htmlspecialchars($view, ENT_QUOTES, 'UTF-8') ?>">
+                            <input type="hidden" name="prodi" value="<?= htmlspecialchars($prodi_filter, ENT_QUOTES, 'UTF-8') ?>">
+                            <input type="hidden" name="search" value="<?= htmlspecialchars($search, ENT_QUOTES, 'UTF-8') ?>">
+                            <button type="submit" class="btn-delete">Hapus</button>
+                        </form>
                     </td>
                 </tr>
                 <?php } ?>

@@ -5,6 +5,15 @@ if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || ($_SESSION['lo
     exit;
 }
 
+// Helper hitung aman (hindari fatal error bila query gagal)
+function esurat_count($koneksi, $sql) {
+    $r = mysqli_query($koneksi, $sql);
+    if ($r && ($row = mysqli_fetch_assoc($r))) {
+        return (int)($row['count'] ?? 0);
+    }
+    return 0;
+}
+
 // Ambil semua permohonan dari database gabung dengan data pengaju (user)
 // Hanya menampilkan antrean aktif (Pending dan Diproses)
 $query = mysqli_query($koneksi, "SELECT permohonan_surat.*, users.nama_lengkap, users.role 
@@ -12,14 +21,19 @@ $query = mysqli_query($koneksi, "SELECT permohonan_surat.*, users.nama_lengkap, 
                                  JOIN users ON permohonan_surat.user_id = users.id 
                                  WHERE permohonan_surat.status IN ('Pending', 'Diproses')
                                  ORDER BY permohonan_surat.id DESC");
+if (!$query) {
+    die("Gagal memuat antrean permohonan. Silakan coba lagi.");
+}
 
 // Ambil Statistik Pengguna
-$total_users = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as count FROM users WHERE role != 'admin'"))['count'];
-$dosen_count = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as count FROM users WHERE role = 'dosen'"))['count'];
+$total_users = esurat_count($koneksi, "SELECT COUNT(*) as count FROM users WHERE role != 'admin'");
+$dosen_count = esurat_count($koneksi, "SELECT COUNT(*) as count FROM users WHERE role = 'dosen'");
 $prodi_counts_query = mysqli_query($koneksi, "SELECT prodi, COUNT(*) as count FROM users WHERE role = 'mahasiswa' GROUP BY prodi ORDER BY prodi ASC");
 $prodi_stats = [];
-while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
-    $prodi_stats[] = $ps;
+if ($prodi_counts_query) {
+    while ($ps = mysqli_fetch_assoc($prodi_counts_query)) {
+        $prodi_stats[] = $ps;
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -111,10 +125,10 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
 
         <div class="stats-grid">
             <?php
-                $total_req = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as count FROM permohonan_surat"))['count'];
-                $pending_req = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as count FROM permohonan_surat WHERE status='Pending'"))['count'];
-                $process_req = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as count FROM permohonan_surat WHERE status='Diproses'"))['count'];
-                $selesai_req = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as count FROM permohonan_surat WHERE status='Selesai'"))['count'];
+                $total_req = esurat_count($koneksi, "SELECT COUNT(*) as count FROM permohonan_surat");
+                $pending_req = esurat_count($koneksi, "SELECT COUNT(*) as count FROM permohonan_surat WHERE status='Pending'");
+                $process_req = esurat_count($koneksi, "SELECT COUNT(*) as count FROM permohonan_surat WHERE status='Diproses'");
+                $selesai_req = esurat_count($koneksi, "SELECT COUNT(*) as count FROM permohonan_surat WHERE status='Selesai'");
             ?>
             <div class="stat-card">
                 <div>
@@ -175,12 +189,12 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
                 <tr>
                     <td>
                         <span style="font-weight: 600; color: var(--dark);"><?= htmlspecialchars($row['nama_lengkap']); ?></span><br>
-                        <small style="color: #858796; text-transform: capitalize;"><?= $row['role']; ?></small>
+                        <small style="color: #858796; text-transform: capitalize;"><?= htmlspecialchars($row['role'], ENT_QUOTES, 'UTF-8'); ?></small>
                     </td>
                     <td><span style="font-weight: 500;"><?= htmlspecialchars($row['jenis_surat']); ?></span></td>
                     <td style="max-width: 200px;"><small><?= htmlspecialchars($row['catatan_user']); ?></small></td>
                     <td><?php if(!empty($row['berkas_pendukung'])) { ?>
-                            <a href="uploads/<?= htmlspecialchars(basename($row['berkas_pendukung']), ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="btn-view-doc"><i class="fa-solid fa-file-arrow-up"></i> Lihat</a>
+                            <a href="file_download.php?type=berkas&id=<?= (int)$row['id']; ?>" target="_blank" class="btn-view-doc"><i class="fa-solid fa-file-arrow-up"></i> Lihat</a>
                         <?php } else { ?>
                             <small style="color: #a0aec0;">Tidak ada berkas</small>
                         <?php } ?>
@@ -193,7 +207,7 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
                             elseif($row['status'] == 'Selesai') $class = 'bg-selesai';
                             elseif($row['status'] == 'Ditolak') $class = 'bg-ditolak';
                         ?>
-                        <span class="badge <?= $class; ?>"><?= $row['status']; ?></span>
+                        <span class="badge <?= $class; ?>"><?= htmlspecialchars($row['status'], ENT_QUOTES, 'UTF-8'); ?></span>
                     </td>
                     <td>
                         <a href="admin_kirim_surat.php?id_permohonan=<?= (int)$row['id']; ?>&user_id=<?= (int)$row['user_id']; ?>&role=<?= urlencode($row['role']); ?>&jenis=<?= urlencode($row['jenis_surat']); ?>" class="btn-action">
@@ -230,7 +244,7 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
                 <?php foreach($prodi_stats as $stat): ?>
                 <div class="user-list-item">
                     <span>Mahasiswa - <?= htmlspecialchars($stat['prodi'] ?: 'Tanpa Prodi'); ?></span>
-                    <span class="count-badge"><?= $stat['count']; ?></span>
+                    <span class="count-badge"><?= (int)$stat['count']; ?></span>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -245,9 +259,14 @@ while($ps = mysqli_fetch_assoc($prodi_counts_query)) {
             
             const ctx = document.getElementById('userChart').getContext('2d');
             
-            // Menyiapkan data dari PHP ke JavaScript
-            const labels = ['Dosen', <?php foreach($prodi_stats as $s) echo '"'.addslashes($s['prodi']?:'Tanpa Prodi').'",'; ?>];
-            const counts = [<?= $dosen_count ?>, <?php foreach($prodi_stats as $s) echo (int)$s['count'].","; ?>];
+            // Menyiapkan data dari PHP ke JavaScript (json_encode = aman dari XSS)
+            const labels = <?= json_encode(
+                array_merge(['Dosen'], array_map(function ($s) { return $s['prodi'] ?: 'Tanpa Prodi'; }, $prodi_stats)),
+                JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+            ) ?>;
+            const counts = <?= json_encode(
+                array_merge([(int)$dosen_count], array_map(function ($s) { return (int)$s['count']; }, $prodi_stats))
+            ) ?>;
 
             // Hancurkan instance bagan lama jika ada untuk menghindari tumpang tindih
             if (userChartInstance) {

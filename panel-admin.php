@@ -14,8 +14,8 @@ if (!isset($_SESSION['adm_fail'])) {
 }
 $fail = &$_SESSION['adm_fail'];
 
-// Reset window jika sudah lewat
-if (time() - $fail['first'] > $LOCK_WINDOW) {
+// Reset hanya saat tidak sedang terkunci dan jendela waktu sudah lewat
+if (time() >= (int)($fail['locked_until'] ?? 0) && (time() - (int)$fail['first'] > $LOCK_WINDOW)) {
     $fail = ['count' => 0, 'first' => time(), 'locked_until' => 0];
 }
 
@@ -35,7 +35,7 @@ if (isset($_POST['login'])) {
             mysqli_stmt_bind_param($stmt, "s", $username);
             mysqli_stmt_execute($stmt);
             $result = mysqli_stmt_get_result($stmt);
-            if ($row = mysqli_fetch_assoc($result)) {
+            if ($result && ($row = mysqli_fetch_assoc($result))) {
                 if (password_verify($password, $row['password'])) {
                     $ok = true;
                     // Reset counter gagal
@@ -55,9 +55,10 @@ if (isset($_POST['login'])) {
             // Perlambat brute-force tanpa mengubah tampilan (delay kecil acak)
             usleep(rand(400000, 900000));
             $fail['count']++;
-            if ($fail['count'] == 1) { $fail['first'] = time(); }
+            if ($fail['count'] === 1) { $fail['first'] = time(); }
             if ($fail['count'] >= $LOCK_MAX) {
                 $fail['locked_until'] = time() + $LOCK_WINDOW;
+                $fail['first'] = time();
                 $error = "Terlalu banyak percobaan gagal. Akun dikunci sementara ±15 menit.";
             } else {
                 $error = "Username atau Password salah!";

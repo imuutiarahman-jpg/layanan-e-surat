@@ -8,10 +8,13 @@ if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['l
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) { die("ID tidak valid."); }
 $stmt = mysqli_prepare($koneksi, "SELECT * FROM master_surat_jenis WHERE id = ?");
+if (!$stmt) {
+    die("Gagal memuat data. Silakan coba lagi.");
+}
 mysqli_stmt_bind_param($stmt, "i", $id);
 mysqli_stmt_execute($stmt);
 $res = mysqli_stmt_get_result($stmt);
-$data = mysqli_fetch_assoc($res);
+$data = $res ? mysqli_fetch_assoc($res) : null;
 
 if (!$data) {
     die("Data tidak ditemukan.");
@@ -40,18 +43,18 @@ $list_prodi = ['Umum', 'Dosen', 'Sistem Informasi', 'Geografi', 'Ilmu Komputer',
         <form action="proses_master_surat.php" method="POST">
             <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="edit_jenis">
-            <input type="hidden" name="id" value="<?= $data['id'] ?>">
+            <input type="hidden" name="id" value="<?= (int)$data['id'] ?>">
             
             <div class="mb-3">
                 <label class="form-label fw-bold">Nama Jenis Surat</label>
-                <input type="text" name="nama_surat" class="form-control" value="<?= htmlspecialchars($data['nama_surat']) ?>" required>
+                <input type="text" name="nama_surat" class="form-control" value="<?= htmlspecialchars($data['nama_surat'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required maxlength="200">
             </div>
             
             <div class="mb-3">
                 <label class="form-label fw-bold">Kategori / Prodi</label>
                 <select name="prodi" class="form-select" required>
                     <?php foreach($list_prodi as $p): ?>
-                        <option value="<?= $p ?>" <?= ($data['prodi'] == $p) ? 'selected' : '' ?>><?= $p ?></option>
+                        <option value="<?= htmlspecialchars($p, ENT_QUOTES, 'UTF-8') ?>" <?= ($data['prodi'] == $p) ? 'selected' : '' ?>><?= htmlspecialchars($p, ENT_QUOTES, 'UTF-8') ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -62,12 +65,12 @@ $list_prodi = ['Umum', 'Dosen', 'Sistem Informasi', 'Geografi', 'Ilmu Komputer',
                     <input class="form-check-input" type="checkbox" name="require_berkas" value="1" id="editReqBerkas" <?= $data['require_berkas'] ? 'checked' : '' ?>>
                     <label class="form-check-label" for="editReqBerkas">Aktifkan Unggah Berkas</label>
                 </div>
-                <input type="text" name="info_berkas" class="form-control" value="<?= htmlspecialchars($data['info_berkas']) ?>" placeholder="Instruksi berkas...">
+                <input type="text" name="info_berkas" class="form-control" value="<?= htmlspecialchars($data['info_berkas'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="Instruksi berkas..." maxlength="255">
             </div>
 
             <div class="mb-4">
                 <label class="form-label fw-bold">Variabel Tambahan</label>
-                <input type="text" name="variabel_tambahan" class="form-control" value="<?= htmlspecialchars($data['variabel_tambahan']) ?>">
+                <input type="text" name="variabel_tambahan" class="form-control" value="<?= htmlspecialchars($data['variabel_tambahan'] ?? '', ENT_QUOTES, 'UTF-8') ?>" maxlength="1000">
             </div>
             
             <div class="d-flex justify-content-between">

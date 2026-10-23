@@ -61,7 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // Helper lokal: sanitasi + validasi file docx tanpa mengubah tampilan
     $validate_docx = function($file_arr) {
-        if (!isset($file_arr) || ($file_arr['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        if (!isset($file_arr) || ($file_arr['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
+            || !is_uploaded_file($file_arr['tmp_name'] ?? '')) {
             return [false, 'File belum dipilih / gagal diunggah.'];
         }
         if (($file_arr['size'] ?? 0) > 10 * 1024 * 1024) {
@@ -92,12 +93,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     // 1. PENANGANAN AKSI TAMBAH DATA
     if ($action == 'tambah_jenis') {
-        $nama_surat = trim($_POST['nama_surat'] ?? '');
+        $nama_surat = mb_substr(trim(strip_tags($_POST['nama_surat'] ?? '')), 0, 200);
         $prodi = $_POST['prodi'] ?? 'Umum';
         if (!in_array($prodi, $allowed_prodi, true)) { $prodi = 'Umum'; }
         $require_berkas = isset($_POST['require_berkas']) ? 1 : 0;
-        $info_berkas = trim($_POST['info_berkas'] ?? '');
-        $updated_by = $_SESSION['nama'] ?? 'Admin';
+        $info_berkas = mb_substr(trim(strip_tags($_POST['info_berkas'] ?? '')), 0, 255);
+        $updated_by = mb_substr((string)($_SESSION['nama'] ?? 'Admin'), 0, 100);
         if ($nama_surat === '') { die("Nama jenis surat wajib diisi."); }
 
         [$ok, $msg] = $validate_docx($_FILES['file_template'] ?? null);
@@ -122,7 +123,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
 
             // Jalankan Query Insert ke Database (prepared)
-            $stmt = mysqli_prepare($koneksi, "INSERT INTO master_surat_jenis (nama_surat, prodi, variabel_tambahan, file_template, require_berkas, info_berkas, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+            // format_nomor wajib (NOT NULL) di skema, isi string kosong agar tidak gagal di MySQL strict mode
+            $stmt = mysqli_prepare($koneksi, "INSERT INTO master_surat_jenis (nama_surat, prodi, variabel_tambahan, file_template, format_nomor, require_berkas, info_berkas, updated_by, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?, NOW())");
+            if (!$stmt) {
+                @unlink($path);
+                die("Gagal menyiapkan data. Silakan coba lagi.");
+            }
             mysqli_stmt_bind_param($stmt, "ssssiss", $nama_surat, $prodi, $variabel_tambahan, $file_name, $require_berkas, $info_berkas, $updated_by);
             
             if (mysqli_stmt_execute($stmt)) {
@@ -141,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // 2. PENANGANAN AKSI GANTI TEMPLATE
     elseif ($action == 'upload_template') {
         $id_jenis = (int)($_POST['id_jenis'] ?? 0);
-        $updated_by = $_SESSION['nama'] ?? 'Admin';
+        $updated_by = mb_substr((string)($_SESSION['nama'] ?? 'Admin'), 0, 100);
         if ($id_jenis <= 0) { die("ID tidak valid."); }
 
         [$ok, $msg] = $validate_docx($_FILES['file_rtf'] ?? null);
@@ -166,6 +172,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             // Jalankan Query Update berdasarkan ID Jenis Surat (prepared)
             $stmt = mysqli_prepare($koneksi, "UPDATE master_surat_jenis SET file_template = ?, variabel_tambahan = ?, updated_by = ?, updated_at = NOW() WHERE id = ?");
+            if (!$stmt) {
+                @unlink($path);
+                die("Gagal menyiapkan data. Silakan coba lagi.");
+            }
             mysqli_stmt_bind_param($stmt, "sssi", $file_name, $variabel_tambahan, $updated_by, $id_jenis);
             
             if (mysqli_stmt_execute($stmt)) {
@@ -184,16 +194,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // 3. PENANGANAN AKSI EDIT DATA (Nama & Format)
     elseif ($action == 'edit_jenis') {
         $id = (int)($_POST['id'] ?? 0);
-        $nama_surat = trim($_POST['nama_surat'] ?? '');
+        $nama_surat = mb_substr(trim(strip_tags($_POST['nama_surat'] ?? '')), 0, 200);
         $prodi = $_POST['prodi'] ?? 'Umum';
         if (!in_array($prodi, $allowed_prodi, true)) { $prodi = 'Umum'; }
         $require_berkas = isset($_POST['require_berkas']) ? 1 : 0;
-        $info_berkas = trim($_POST['info_berkas'] ?? '');
-        $variabel_tambahan = trim($_POST['variabel_tambahan'] ?? '');
-        $updated_by = $_SESSION['nama'] ?? 'Admin';
+        $info_berkas = mb_substr(trim(strip_tags($_POST['info_berkas'] ?? '')), 0, 255);
+        $variabel_tambahan = mb_substr(trim(strip_tags($_POST['variabel_tambahan'] ?? '')), 0, 1000);
+        $updated_by = mb_substr((string)($_SESSION['nama'] ?? 'Admin'), 0, 100);
         if ($id <= 0 || $nama_surat === '') { die("Data tidak valid."); }
 
         $stmt = mysqli_prepare($koneksi, "UPDATE master_surat_jenis SET nama_surat=?, prodi=?, require_berkas=?, info_berkas=?, variabel_tambahan=?, updated_by=?, updated_at=NOW() WHERE id=?");
+        if (!$stmt) {
+            die("Gagal menyiapkan data. Silakan coba lagi.");
+        }
         mysqli_stmt_bind_param($stmt, "ssisssi", $nama_surat, $prodi, $require_berkas, $info_berkas, $variabel_tambahan, $updated_by, $id);
 
         if (mysqli_stmt_execute($stmt)) {
@@ -210,6 +223,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($id <= 0) { die("ID tidak valid."); }
         
         $stmt = mysqli_prepare($koneksi, "DELETE FROM master_surat_jenis WHERE id = ?");
+        if (!$stmt) {
+            die("Gagal menyiapkan data. Silakan coba lagi.");
+        }
         mysqli_stmt_bind_param($stmt, "i", $id);
 
         if (mysqli_stmt_execute($stmt)) {

@@ -3,43 +3,90 @@ include 'koneksi.php';
 
 $error_msg = '';
 
+// === Rate-limit login (anti brute-force) ===
+$LOCK_MAX = 5;
+$LOCK_WINDOW = 900; // 15 menit
+
+if (!isset($_SESSION['login_fail'])) {
+    $_SESSION['login_fail'] = ['count' => 0, 'first' => time(), 'locked_until' => 0];
+}
+$fail = &$_SESSION['login_fail'];
+
+// Jangan reset saat masih terkunci; reset hanya bila jendela waktu sudah lewat.
+if (time() >= (int)($fail['locked_until'] ?? 0) && (time() - (int)$fail['first'] > $LOCK_WINDOW)) {
+    $fail = ['count' => 0, 'first' => time(), 'locked_until' => 0];
+}
+
 if (isset($_POST['login'])) {
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $role = isset($_POST['role']) ? $_POST['role'] : '';
-
-    // Login publik hanya untuk mahasiswa/dosen. Admin wajib via panel-admin.php
-    if (!in_array($role, ['mahasiswa', 'dosen'], true)) {
-        $error_msg = "Pilih role Mahasiswa atau Dosen. Akun admin wajib masuk lewat Panel Admin.";
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        $error_msg = "Sesi kedaluwarsa. Muat ulang halaman lalu coba lagi.";
+    } elseif (time() < (int)($fail['locked_until'] ?? 0)) {
+        $sisa = (int)(($fail['locked_until'] - time()) / 60) + 1;
+        $error_msg = "Terlalu banyak percobaan gagal. Coba lagi dalam ±{$sisa} menit.";
     } else {
-        $stmt = mysqli_prepare($koneksi, "SELECT * FROM users WHERE username=? AND role=?");
-        if (!$stmt) {
-            $error_msg = "Sistem login sedang bermasalah. Silakan coba lagi nanti.";
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $role = isset($_POST['role']) ? $_POST['role'] : '';
+
+        $valid = false;
+
+        // Login publik hanya untuk mahasiswa/dosen. Admin wajib via panel-admin.php
+        if (!in_array($role, ['mahasiswa', 'dosen'], true)) {
+            $error_msg = "Pilih role Mahasiswa atau Dosen. Akun admin wajib masuk lewat Panel Admin.";
         } else {
-            mysqli_stmt_bind_param($stmt, "ss", $username, $role);
-            mysqli_stmt_execute($stmt);
-            $result = mysqli_stmt_get_result($stmt);
+            $stmt = mysqli_prepare($koneksi, "SELECT * FROM users WHERE username=? AND role=?");
+            if (!$stmt) {
+                $error_msg = "Sistem login sedang bermasalah. Silakan coba lagi nanti.";
+            } else {
+                mysqli_stmt_bind_param($stmt, "ss", $username, $role);
+                mysqli_stmt_execute($stmt);
+                $result = mysqli_stmt_get_result($stmt);
 
-            if ($result && ($row = mysqli_fetch_assoc($result))) {
-                if (password_verify($password, $row['password'])) {
-                    session_regenerate_id(true);
-                    $_SESSION['login'] = true;
-                    $_SESSION['user_id'] = (int)$row['id'];
-                    $_SESSION['nama'] = $row['nama_lengkap'];
-                    $_SESSION['role'] = $row['role'];
+                if ($result && ($row = mysqli_fetch_assoc($result))) {
+                    if (password_verify($password, $row['password'])) {
+                        $valid = true;
 
-                    if ($row['role'] == 'mahasiswa') {
-                        header("Location: dashboard_mhs.php");
-                    } else {
-                        header("Location: dashboard_dosen.php");
+                        $_SESSION['login_fail'] = ['count' => 0, 'first' => time(), 'locked_until' => 0];
+                        unset($fail);
+
+                        session_regenerate_id(true);
+                        $_SESSION['login'] = true;
+                        $_SESSION['user_id'] = (int)$row['id'];
+                        $_SESSION['nama'] = $row['nama_lengkap'];
+                        $_SESSION['role'] = $row['role'];
+                        $_SESSION['last_activity'] = time();
+                        $_SESSION['last_regen'] = time();
+
+                        if ($row['role'] == 'mahasiswa') {
+                            header("Location: dashboard_mhs.php");
+                        } else {
+                            header("Location: dashboard_dosen.php");
+                        }
+                        exit;
                     }
-                    exit;
+                }
+                if ($error_msg === '') {
+                    $error_msg = "Username, password, atau role tidak cocok. Periksa kembali role yang dipilih.";
                 }
             }
-            $error_msg = "Username, password, atau role tidak cocok. Periksa kembali role yang dipilih.";
         }
-    } // tutup else whitelist role
+
+        if (!$valid) {
+            // Perlambat percobaan otomatis
+            usleep(random_int(300000, 700000));
+            $fail['count']++;
+            if ($fail['count'] === 1) {
+                $fail['first'] = time();
+            }
+            if ($fail['count'] >= $LOCK_MAX) {
+                $fail['locked_until'] = time() + $LOCK_WINDOW;
+                $fail['first'] = time();
+                $error_msg = "Terlalu banyak percobaan gagal. Akun dikunci sementara ±15 menit.";
+            }
+        }
+    }
 }
+unset($fail);
 ?>
 <!DOCTYPE html>
 <html>
@@ -104,8 +151,9 @@ if (isset($_POST['login'])) {
     <h3 style="margin-top: 5px;">Fakultas Sains dan Ilmu Komputer</h3>
     <?php if($error_msg !== '') echo "<div class='error-msg'>" . htmlspecialchars($error_msg, ENT_QUOTES, 'UTF-8') . "</div>"; ?>
     <form method="POST" action="">
-        <input type="text" name="username" placeholder="Username" required>
-        <input type="password" name="password" placeholder="Password" required>
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+        <input type="text" name="username" placeholder="Username" required autocomplete="username">
+        <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
         <select name="role" required>
             <option value="" disabled selected>Pilih Role...</option>
             <option value="mahasiswa">Mahasiswa</option>

@@ -1,6 +1,26 @@
-# Larang listing + larang eksekusi script di folder upload
+# Tutup akses langsung ke folder upload.
+# File hanya boleh disajikan lewat file_download.php / cetak_surat.php
+# yang sudah memeriksa sesi & hak akses.
+
 Options -Indexes
+
+# Tetap cegah eksekusi script (lapisan tambahan)
 RemoveHandler .php .phtml .phar
 <FilesMatch "\.(php|phtml|phar|pl|py|sh|cgi)$">
-  Require all denied
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
 </FilesMatch>
+
+# Tolak semua akses langsung (file tetap bisa dibaca oleh PHP)
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

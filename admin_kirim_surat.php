@@ -15,38 +15,73 @@ if (isset($_POST['kirim_surat'])) {
     $variables = isset($_POST['var']) && is_array($_POST['var']) ? $_POST['var'] : [];
     // Batasi panjang tiap variabel agar tidak membebani DOCX/DB
     foreach ($variables as $k => $v) {
-        if (!preg_match('/^[A-Za-z0-9_]+$/', (string)$k)) { unset($variables[$k]); continue; }
+        if (!preg_match('/^[A-Za-z0-9_\/]+$/', (string)$k)) { unset($variables[$k]); continue; }
         $variables[$k] = mb_substr(trim(strip_tags((string)$v)), 0, 5000);
     }
     $data_json = json_encode($variables, JSON_UNESCAPED_UNICODE);
     $id_permohonan = (int)($_POST['id_permohonan'] ?? 0);
 
-    if ($user_id <= 0 || $jenis === '') {
+    // Validasi penerima (harus user non-admin yang benar-benar ada)
+    $recipient_ok = false;
+    $stmt_u = mysqli_prepare($koneksi, "SELECT id FROM users WHERE id = ? AND role IN ('mahasiswa','dosen') LIMIT 1");
+    if ($stmt_u) {
+        mysqli_stmt_bind_param($stmt_u, "i", $user_id);
+        mysqli_stmt_execute($stmt_u);
+        $res_u = mysqli_stmt_get_result($stmt_u);
+        $recipient_ok = ($res_u && mysqli_fetch_assoc($res_u));
+    }
+
+    // Validasi jenis surat terhadap master
+    $jenis_ok = false;
+    $stmt_j = mysqli_prepare($koneksi, "SELECT id FROM master_surat_jenis WHERE nama_surat = ? LIMIT 1");
+    if ($stmt_j) {
+        mysqli_stmt_bind_param($stmt_j, "s", $jenis);
+        mysqli_stmt_execute($stmt_j);
+        $res_j = mysqli_stmt_get_result($stmt_j);
+        $jenis_ok = ($res_j && mysqli_fetch_assoc($res_j));
+    }
+
+    // Bila memproses permohonan, pastikan ID-nya benar-benar ada
+    $permohonan_ok = true;
+    if ($id_permohonan > 0) {
+        $permohonan_ok = false;
+        $stmt_pm = mysqli_prepare($koneksi, "SELECT id FROM permohonan_surat WHERE id = ? LIMIT 1");
+        if ($stmt_pm) {
+            mysqli_stmt_bind_param($stmt_pm, "i", $id_permohonan);
+            mysqli_stmt_execute($stmt_pm);
+            $res_pm = mysqli_stmt_get_result($stmt_pm);
+            $permohonan_ok = ($res_pm && mysqli_fetch_assoc($res_pm));
+        }
+    }
+
+    if ($user_id <= 0 || $jenis === '' || !$recipient_ok || !$jenis_ok || !$permohonan_ok) {
         die("Data penerima / jenis surat tidak valid.");
     }
 
     $surat_final = 'SYSTEM_GENERATED';
 
-    if (!empty($id_permohonan)) {
+    if ($id_permohonan > 0) {
         // Jika memproses permohonan yang sudah ada (UPDATE)
         $stmt = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET jenis_surat=?, status='Diproses', surat_jadi=?, data_surat=? WHERE id=?");
+        if (!$stmt) {
+            die("Gagal menyiapkan query. Silakan coba lagi.");
+        }
         mysqli_stmt_bind_param($stmt, "sssi", $jenis, $surat_final, $data_json, $id_permohonan);
     } else {
         // Jika membuat surat baru tanpa permohonan sebelumnya (INSERT)
         $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, status, surat_jadi, data_surat) VALUES (?, ?, 'Diproses', ?, ?)");
+        if (!$stmt) {
+            die("Gagal menyiapkan query. Silakan coba lagi.");
+        }
         mysqli_stmt_bind_param($stmt, "isss", $user_id, $jenis, $surat_final, $data_json);
     }
-    
-    if ($stmt) {
-        if (mysqli_stmt_execute($stmt)) {
-            $id_final = !empty($id_permohonan) ? $id_permohonan : mysqli_insert_id($koneksi);
-            header("Location: cetak_surat.php?id=" . (int)$id_final);
-            exit;
-        } else {
-            die("Gagal menyimpan surat. Silakan coba lagi.");
-        }
+
+    if (mysqli_stmt_execute($stmt)) {
+        $id_final = $id_permohonan > 0 ? $id_permohonan : mysqli_insert_id($koneksi);
+        header("Location: cetak_surat.php?id=" . (int)$id_final);
+        exit;
     } else {
-        die("Gagal menyiapkan query. Pastikan kolom 'data_surat' sudah ada di tabel 'permohonan_surat'.");
+        die("Gagal menyimpan surat. Silakan coba lagi.");
     }
 }
 
@@ -67,8 +102,10 @@ if ($users_res) {
 // Ambil daftar jenis surat dari master untuk dropdown
 $master_surat_query = mysqli_query($koneksi, "SELECT nama_surat, variabel_tambahan, prodi FROM master_surat_jenis ORDER BY nama_surat ASC");
 $master_surat_list = [];
-while($ms = mysqli_fetch_assoc($master_surat_query)) {
-    $master_surat_list[] = $ms;
+if ($master_surat_query) {
+    while ($ms = mysqli_fetch_assoc($master_surat_query)) {
+        $master_surat_list[] = $ms;
+    }
 }
 
 // Ambil data permohonan jika ada ID untuk pre-fill field (Insightful addition)
@@ -81,7 +118,7 @@ if (isset($_GET['id_permohonan'])) {
             mysqli_stmt_bind_param($stmt_p, "i", $id_perm);
             mysqli_stmt_execute($stmt_p);
             $res_p = mysqli_stmt_get_result($stmt_p);
-            if ($p_res = mysqli_fetch_assoc($res_p)) {
+            if ($res_p && ($p_res = mysqli_fetch_assoc($res_p))) {
                 if (!empty($p_res['data_surat'])) {
                     $decoded = json_decode($p_res['data_surat'], true);
                     if (is_array($decoded)) { $existing_data = $decoded; }
@@ -166,7 +203,7 @@ if (isset($_GET['id_permohonan'])) {
                 <select name="jenis_surat" id="templateSelect" required onchange="showFields()" disabled>
                     <option value="">-- Pilih Penerima Terlebih Dahulu --</option>
                     <?php foreach($master_surat_list as $ms): ?>
-                        <option value="<?= htmlspecialchars($ms['nama_surat']) ?>" data-prodi="<?= htmlspecialchars($ms['prodi']) ?>" data-vars="<?= htmlspecialchars($ms['variabel_tambahan']) ?>"><?= htmlspecialchars($ms['nama_surat']) ?></option>
+                        <option value="<?= htmlspecialchars($ms['nama_surat'], ENT_QUOTES, 'UTF-8') ?>" data-prodi="<?= htmlspecialchars($ms['prodi'] ?? '', ENT_QUOTES, 'UTF-8') ?>" data-vars="<?= htmlspecialchars($ms['variabel_tambahan'] ?? '', ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($ms['nama_surat'], ENT_QUOTES, 'UTF-8') ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -181,8 +218,14 @@ if (isset($_GET['id_permohonan'])) {
     </div>
 
     <script>
-        const usersData = <?= json_encode($all_users); ?>;
-        const existingVars = <?= json_encode($existing_data); ?>;
+        const usersData = <?= json_encode($all_users, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+        const existingVars = <?= json_encode($existing_data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+        // Escape nilai sebelum dimasukkan ke HTML (cegah XSS dari nama user / data lama)
+        function escAttr(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
         
         // Jalankan otomatis jika datang dari tombol "Proses Surat"
         window.onload = function() {
@@ -287,25 +330,27 @@ if (isset($_GET['id_permohonan'])) {
 
             const today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
             const getVal = (key, def = '') => (existingVars && existingVars[key]) ? existingVars[key] : def;
+            const recNama = userOpt ? (userOpt.dataset.nama || '') : '';
+            const recId = userOpt ? (userOpt.dataset.id || '') : '';
 
             let fields = `
-                <label>Nama Lengkap</label><input type="text" name="var[nama]" value="${getVal('nama', userOpt.dataset.nama)}" required>
-                <label>NIM / NIDN</label><input type="text" name="var[id_number]" value="${getVal('nim', userOpt.dataset.id || '')}" required>
-                <label>Nomor Surat SK</label><input type="text" name="var[nomor_surat]" value="${getVal('nomor_surat')}" placeholder="Contoh: 153/FSIK-UMGO/KEP/V/2026" required>
-                <label>Tanggal Surat (Muncul di Footer)</label><input type="text" name="var[tanggal_surat]" value="${getVal('tanggal_surat', today)}" required>
+                <label>Nama Lengkap</label><input type="text" name="var[nama]" value="${escAttr(getVal('nama', recNama))}" required>
+                <label>NIM / NIDN</label><input type="text" name="var[id_number]" value="${escAttr(getVal('nim', recId))}" required>
+                <label>Nomor Surat SK</label><input type="text" name="var[nomor_surat]" value="${escAttr(getVal('nomor_surat'))}" placeholder="Contoh: 153/FSIK-UMGO/KEP/V/2026" required>
+                <label>Tanggal Surat (Muncul di Footer)</label><input type="text" name="var[tanggal_surat]" value="${escAttr(getVal('tanggal_surat', today))}" required>
             `;
 
             if (extraVars.trim() !== "") {
                 extraVars.split(',').forEach(v => {
-                    let cleanVar = v.replace('${', '').replace('}', '').trim();
+                    let cleanVar = v.replace('${', '').replace('}', '').trim().replace(/[^A-Za-z0-9_\/]/g, '');
                     const skip = ['nama', 'nim', 'id_number', 'nama_lengkap', 'nomor_surat', 'tanggal_surat'];
-                    if (!skip.includes(cleanVar)) {
+                    if (cleanVar !== '' && !skip.includes(cleanVar)) {
                         let label = cleanVar.replace(/_/g, ' ').toUpperCase();
                         // Gunakan textarea jika variabel mengandung kata 'judul', 'catatan', atau 'data'
                         if (['judul', 'catatan', 'data', 'penguji'].some(k => cleanVar.includes(k))) {
-                            fields += `<label>${label}</label><textarea name="var[${cleanVar}]" class="summernote" required>${getVal(cleanVar)}</textarea>`;
+                            fields += `<label>${escAttr(label)}</label><textarea name="var[${cleanVar}]" class="summernote" required>${escAttr(getVal(cleanVar))}</textarea>`;
                         } else {
-                            fields += `<label>${label}</label><input type="text" name="var[${cleanVar}]" value="${getVal(cleanVar)}" placeholder="Masukkan ${label}..." required>`;
+                            fields += `<label>${escAttr(label)}</label><input type="text" name="var[${cleanVar}]" value="${escAttr(getVal(cleanVar))}" placeholder="Masukkan ${escAttr(label)}..." required>`;
                         }
                     }
                 });

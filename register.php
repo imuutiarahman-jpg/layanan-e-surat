@@ -2,53 +2,73 @@
 include 'koneksi.php';
 
 if (isset($_POST['register'])) {
-    $username = trim($_POST['username']);
-    $nama_lengkap = trim($_POST['nama_lengkap']);
-    $password_raw = $_POST['password'];
-    $role = $_POST['role'];
+    $username = trim($_POST['username'] ?? '');
+    $nama_lengkap = trim($_POST['nama_lengkap'] ?? '');
+    $password_raw = $_POST['password'] ?? '';
+    $role = $_POST['role'] ?? '';
+    $nomor_induk = trim($_POST['nomor_induk'] ?? '');
+    $prodi_input = trim($_POST['prodi'] ?? '');
+
+    // Daftar prodi resmi (juga mencegah penyisipan HTML/JS ke kolom prodi)
+    $allowed_prodi = [
+        'Sistem Informasi', 'Geografi', 'Ilmu Komputer', 'Bisnis Digital',
+        'Teknik Sipil', 'Akuakultur', 'Agribisnis', 'Peternakan',
+    ];
 
     // Hardening: hanya mahasiswa/dosen yang boleh daftar via form publik.
     // Pilihan 'admin' di dropdown tetap tampil agar tampilan tidak berubah,
     // tapi ditolak di backend untuk mencegah eskalasi privilege.
-    if (!in_array($role, ['mahasiswa', 'dosen'], true)) {
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        $error = "Sesi kedaluwarsa. Muat ulang halaman lalu coba lagi.";
+    } elseif (!in_array($role, ['mahasiswa', 'dosen'], true)) {
         $error = "Pendaftaran hanya tersedia untuk Mahasiswa dan Dosen. Hubungi administrator untuk akun Admin.";
     } elseif (strlen($username) < 3 || strlen($username) > 50 || !preg_match('/^[A-Za-z0-9_.-]+$/', $username)) {
         $error = "Username 3-50 karakter (huruf/angka/_ . -).";
-    } elseif (strlen($password_raw) < 6) {
-        $error = "Password minimal 6 karakter.";
-    } elseif (trim($nama_lengkap) === '') {
+    } elseif (strlen($password_raw) < 8 || strlen($password_raw) > 72) {
+        $error = "Password harus 8-72 karakter.";
+    } elseif ($nama_lengkap === '') {
         $error = "Nama lengkap wajib diisi.";
+    } elseif (strlen($nama_lengkap) > 100) {
+        $error = "Nama lengkap maksimal 100 karakter.";
+    } elseif ($nomor_induk === '' || strlen($nomor_induk) > 50) {
+        $error = "NIM/NIDN wajib diisi (maksimal 50 karakter).";
+    } elseif ($role === 'mahasiswa' && !in_array($prodi_input, $allowed_prodi, true)) {
+        $error = "Pilih program studi yang valid.";
     } else {
-    $password = password_hash($password_raw, PASSWORD_DEFAULT);
+        $password = password_hash($password_raw, PASSWORD_DEFAULT);
 
-    // Validasi apakah username sudah ada
-    $stmt_cek = mysqli_prepare($koneksi, "SELECT id FROM users WHERE username = ?");
-    mysqli_stmt_bind_param($stmt_cek, "s", $username);
-    mysqli_stmt_execute($stmt_cek);
-    mysqli_stmt_store_result($stmt_cek);
-
-    if (mysqli_stmt_num_rows($stmt_cek) > 0) {
-        $error = "Username sudah terdaftar! Gunakan username lain.";
-    } else {
-        // Insert user baru
-        $nomor_induk = isset($_POST['nomor_induk']) ? trim($_POST['nomor_induk']) : '';
         // Pastikan prodi hanya diisi jika role adalah mahasiswa
-        $prodi_val = ($role == 'mahasiswa' && isset($_POST['prodi'])) ? $_POST['prodi'] : NULL;
-        $stmt_ins = mysqli_prepare($koneksi, "INSERT INTO users (username, password, nama_lengkap, role, nomor_induk, prodi) VALUES (?, ?, ?, ?, ?, ?)");
-        
-        if ($stmt_ins) {
-            mysqli_stmt_bind_param($stmt_ins, "ssssss", $username, $password, $nama_lengkap, $role, $nomor_induk, $prodi_val);
-            
-            if (mysqli_stmt_execute($stmt_ins)) {
-                echo "<script>alert('Akun berhasil dibuat! Silakan login.'); window.location='login.php';</script>";
-                exit;
-            } else {
-                $error = "Gagal menyimpan data. Silakan coba lagi.";
-            }
-        } else {
+        $prodi_val = ($role === 'mahasiswa') ? $prodi_input : null;
+
+        // Validasi apakah username sudah ada
+        $stmt_cek = mysqli_prepare($koneksi, "SELECT id FROM users WHERE username = ?");
+        if (!$stmt_cek) {
             $error = "Kesalahan pada sistem. Silakan coba lagi.";
+        } else {
+            mysqli_stmt_bind_param($stmt_cek, "s", $username);
+            mysqli_stmt_execute($stmt_cek);
+            mysqli_stmt_store_result($stmt_cek);
+
+            if (mysqli_stmt_num_rows($stmt_cek) > 0) {
+                $error = "Username sudah terdaftar! Gunakan username lain.";
+            } else {
+                // Insert user baru
+                $stmt_ins = mysqli_prepare($koneksi, "INSERT INTO users (username, password, nama_lengkap, role, nomor_induk, prodi) VALUES (?, ?, ?, ?, ?, ?)");
+
+                if ($stmt_ins) {
+                    mysqli_stmt_bind_param($stmt_ins, "ssssss", $username, $password, $nama_lengkap, $role, $nomor_induk, $prodi_val);
+
+                    if (mysqli_stmt_execute($stmt_ins)) {
+                        echo "<script>alert('Akun berhasil dibuat! Silakan login.'); window.location='login.php';</script>";
+                        exit;
+                    } else {
+                        $error = "Gagal menyimpan data. Silakan coba lagi.";
+                    }
+                } else {
+                    $error = "Kesalahan pada sistem. Silakan coba lagi.";
+                }
+            }
         }
-    }
     }
 }
 ?>
@@ -71,10 +91,11 @@ if (isset($_POST['register'])) {
     <h3 style="text-align:center;">Daftar Akun Baru</h3>
     <?php if(isset($error)) echo "<p style='color:red; font-size:13px;'>" . htmlspecialchars($error, ENT_QUOTES, 'UTF-8') . "</p>"; ?>
     <form method="POST" action="" id="regForm">
-        <input type="text" name="username" placeholder="Username" required>
-        <input type="text" name="nama_lengkap" placeholder="Nama Lengkap" required>
-        <input type="text" name="nomor_induk" id="nomor_induk" placeholder="NIM / NIDN" required>
-        <input type="password" name="password" placeholder="Password" required>
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+        <input type="text" name="username" placeholder="Username" required minlength="3" maxlength="50" autocomplete="username">
+        <input type="text" name="nama_lengkap" placeholder="Nama Lengkap" required maxlength="100" autocomplete="name">
+        <input type="text" name="nomor_induk" id="nomor_induk" placeholder="NIM / NIDN" required maxlength="50">
+        <input type="password" name="password" placeholder="Password (min. 8 karakter)" required minlength="8" maxlength="72" autocomplete="new-password">
         <label style="font-size: 14px;">Mendaftar sebagai:</label>
         <select name="role" id="roleSelect" required onchange="toggleProdi()">
             <option value="mahasiswa">Mahasiswa</option>

@@ -9,33 +9,36 @@ if (!isset($_SESSION['login'])) {
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $stmt = mysqli_prepare($koneksi, "SELECT p.*, u.nama_lengkap, u.nomor_induk, u.prodi, u.role FROM permohonan_surat p JOIN users u ON p.user_id = u.id WHERE p.id = ?");
+if (!$stmt) {
+    die("Gagal memuat data surat. Silakan coba lagi.");
+}
 mysqli_stmt_bind_param($stmt, "i", $id);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
-$data = mysqli_fetch_assoc($result);
+$data = $result ? mysqli_fetch_assoc($result) : null;
 
 if (!$data) {
     die("Data tidak ditemukan.");
 }
 
-// Validasi akses
-if ($_SESSION['role'] !== 'admin' && $data['user_id'] != $_SESSION['user_id']) {
+// Validasi akses (admin wajib login lewat panel admin)
+$is_admin = (($_SESSION['role'] ?? '') === 'admin' && (($_SESSION['login_via'] ?? '') === 'panel-admin'));
+
+if (!$is_admin && (int)$data['user_id'] !== (int)($_SESSION['user_id'] ?? 0)) {
     die("Anda tidak memiliki akses ke surat ini.");
 }
 
 // Validasi status
-if ($data['status'] !== 'Selesai' && !($_SESSION['role'] === 'admin' && $data['status'] === 'Diproses')) {
+if ($data['status'] !== 'Selesai' && !($is_admin && $data['status'] === 'Diproses')) {
     die("Surat belum selesai diproses.");
 }
-
-$is_admin = ($_SESSION['role'] === 'admin');
 
 // Logika Tolak permohonan oleh Admin (tanpa mengubah tampilan daftar, hanya tambah aksi di preview)
 if (isset($_POST['tolak_permohonan']) && $is_admin) {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         die("Token keamanan tidak valid.");
     }
-    $alasan = trim($_POST['alasan_tolak'] ?? '');
+    $alasan = mb_substr(trim(strip_tags($_POST['alasan_tolak'] ?? '')), 0, 500);
     if ($alasan === '') { $alasan = 'Permohonan ditolak oleh admin.'; }
     $upd = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET status='Ditolak' WHERE id=?");
     if ($upd) {
@@ -43,8 +46,10 @@ if (isset($_POST['tolak_permohonan']) && $is_admin) {
         mysqli_stmt_execute($upd);
         $pesan_notif = "Permohonan '" . $data['jenis_surat'] . "' DITOLAK. Alasan: " . $alasan;
         $stmt_n = mysqli_prepare($koneksi, "INSERT INTO notifikasi (user_id, pesan) VALUES (?, ?)");
-        mysqli_stmt_bind_param($stmt_n, "is", $data['user_id'], $pesan_notif);
-        mysqli_stmt_execute($stmt_n);
+        if ($stmt_n) {
+            mysqli_stmt_bind_param($stmt_n, "is", $data['user_id'], $pesan_notif);
+            mysqli_stmt_execute($stmt_n);
+        }
         echo "<script>alert('Permohonan ditolak dan user telah dinotifikasi.'); window.location='dashboard_admin.php';</script>";
         exit;
     }
@@ -55,7 +60,7 @@ if (isset($_POST['konfirmasi_kirim']) && $is_admin) {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         die("Token keamanan tidak valid.");
     }
-    if (isset($_FILES['file_ttd']) && $_FILES['file_ttd']['error'] == 0) {
+    if (isset($_FILES['file_ttd']) && $_FILES['file_ttd']['error'] == 0 && is_uploaded_file($_FILES['file_ttd']['tmp_name'] ?? '')) {
         $berkas = $_FILES['file_ttd']['name'];
         $tmp_name = $_FILES['file_ttd']['tmp_name'];
         $ext = strtolower(pathinfo($berkas, PATHINFO_EXTENSION));
@@ -79,13 +84,18 @@ if (isset($_POST['konfirmasi_kirim']) && $is_admin) {
 
             if (move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
                 $update_stmt = mysqli_prepare($koneksi, "UPDATE permohonan_surat SET status='Selesai', surat_jadi=? WHERE id=?");
+                if (!$update_stmt) {
+                    die("Gagal menyiapkan data. Silakan coba lagi.");
+                }
                 mysqli_stmt_bind_param($update_stmt, "si", $berkas_baru, $id);
-                
+
                 if (mysqli_stmt_execute($update_stmt)) {
                     $pesan_notif = "Surat/SK '" . $data['jenis_surat'] . "' yang telah ditandatangani kini tersedia di dashboard Anda.";
                     $stmt_n = mysqli_prepare($koneksi, "INSERT INTO notifikasi (user_id, pesan) VALUES (?, ?)");
-                    mysqli_stmt_bind_param($stmt_n, "is", $data['user_id'], $pesan_notif);
-                    mysqli_stmt_execute($stmt_n);
+                    if ($stmt_n) {
+                        mysqli_stmt_bind_param($stmt_n, "is", $data['user_id'], $pesan_notif);
+                        mysqli_stmt_execute($stmt_n);
+                    }
 
                     echo "<script>alert('Surat berhasil diunggah dan dikirim ke User!'); window.location='dashboard_admin.php';</script>";
                     exit;
@@ -130,7 +140,8 @@ if ($data['surat_jadi'] !== 'SYSTEM_GENERATED') {
     header("Content-Length: " . filesize($file_path));
     // Jika download=1 atau filenya word (.docx/.doc), paksa unduh. Selain itu (PDF/Gambar) tampilkan inline.
     $disposition = ($force_download || strpos($ext, 'doc') !== false) ? 'attachment' : 'inline';
-    header("Content-Disposition: $disposition; filename=\"" . $safe_name . "\"");
+    $download_name = str_replace(['"', "\r", "\n"], '', $safe_name);
+    header("Content-Disposition: $disposition; filename=\"" . $download_name . "\"");
     
     readfile($file_path);
     exit;
@@ -142,21 +153,27 @@ if (!empty($data['data_surat'])) {
     $vars = json_decode($data['data_surat'], true) ?: [];
 }
 
-$base_filename = 'Surat_' . preg_replace('/[^A-Za-z0-9]/', '_', $data['nama_lengkap']) . '.docx';
+$base_filename = 'Surat_' . preg_replace('/[^A-Za-z0-9]/', '_', (string)$data['nama_lengkap']) . '.docx';
 $docx_template = '';
+$row_tmpl = null;
 
 // Ambil template dari database berdasarkan jenis surat (Gunakan LIKE untuk toleransi spasi/karakter)
-$nama_surat_clean = trim($data['jenis_surat']);
+$nama_surat_clean = trim((string)$data['jenis_surat']);
 $stmt_tmpl = mysqli_prepare($koneksi, "SELECT file_template FROM master_surat_jenis WHERE nama_surat = ? OR nama_surat LIKE ? LIMIT 1");
-$search_param = "%" . $nama_surat_clean . "%";
-mysqli_stmt_bind_param($stmt_tmpl, "ss", $nama_surat_clean, $search_param);
-mysqli_stmt_execute($stmt_tmpl);
-$res_tmpl = mysqli_stmt_get_result($stmt_tmpl);
-if ($row_tmpl = mysqli_fetch_assoc($res_tmpl)) {
+if ($stmt_tmpl) {
+    $search_param = "%" . $nama_surat_clean . "%";
+    mysqli_stmt_bind_param($stmt_tmpl, "ss", $nama_surat_clean, $search_param);
+    mysqli_stmt_execute($stmt_tmpl);
+    $res_tmpl = mysqli_stmt_get_result($stmt_tmpl);
+    if ($res_tmpl) {
+        $row_tmpl = mysqli_fetch_assoc($res_tmpl);
+    }
+}
+if ($row_tmpl && !empty($row_tmpl['file_template'])) {
     $docx_template = 'templates/' . basename($row_tmpl['file_template']);
 }
 
-if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
+if ($row_tmpl && !empty($row_tmpl['file_template']) && is_file($docx_template)) {
     // --- CASE 1: MENGGUNAKAN TEMPLATE DOCX ---
     $templateProcessor = new \PhpOffice\PhpWord\TemplateProcessor($docx_template);
 
@@ -178,9 +195,20 @@ if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
         // Untuk admin: simpan sementara dan tampilkan halaman pratinjau
         $temp_dir = 'uploads/temp_admin';
         if (!is_dir($temp_dir)) mkdir($temp_dir, 0755, true);
-        
-        $generated_file_path = $temp_dir . '/' . uniqid('docx_') . '_' . $base_filename;
+
+        // Bersihkan pratinjau kedaluwarsa (> 1 jam) agar tidak menumpuk.
+        // Hanya file dengan pola nama baru (docx_ + 32 hex) yang dibersihkan,
+        // agar file lama milik pengguna tidak ikut terhapus.
+        foreach (glob($temp_dir . '/docx_*') ?: [] as $old_file) {
+            if (preg_match('/^docx_[a-f0-9]{32}_/', basename($old_file))
+                && is_file($old_file) && filemtime($old_file) < time() - 3600) {
+                @unlink($old_file);
+            }
+        }
+
+        $generated_file_path = $temp_dir . '/docx_' . bin2hex(random_bytes(16)) . '_' . $base_filename;
         $templateProcessor->saveAs($generated_file_path);
+        $temp_name = basename($generated_file_path);
 
         // Tampilkan halaman pratinjau untuk admin
         ?>
@@ -204,7 +232,7 @@ if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
             <div class="container">
                 <h3>Pratinjau Surat: <?= htmlspecialchars($data['jenis_surat']) ?></h3>
                 <p>Surat draf berhasil digenerate. Silakan unduh untuk ditandatangani, lalu unggah kembali versi finalnya.</p>
-                <a href="<?= htmlspecialchars($generated_file_path) ?>" class="btn-action btn-download" download="<?= htmlspecialchars($base_filename) ?>">⬇ Unduh DOCX</a>
+                <a href="file_download.php?type=temp&amp;f=<?= urlencode($temp_name) ?>" class="btn-action btn-download" download="<?= htmlspecialchars($base_filename, ENT_QUOTES, 'UTF-8') ?>">⬇ Unduh DOCX</a>
                 
                 <form method="POST" enctype="multipart/form-data" style="margin-top: 20px; border: 1px dashed #ccc; padding: 20px; border-radius: 8px;">
                     <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
@@ -220,7 +248,7 @@ if (!empty($row_tmpl['file_template']) && is_file($docx_template)) {
                     <button type="submit" name="tolak_permohonan" class="btn-action" style="border:none; cursor:pointer; background:#e74c3c; width: 100%;">❌ Tolak & Notifikasi User</button>
                 </form>
 
-                <a href="admin_kirim_surat.php?id_permohonan=<?= $id ?>&user_id=<?= $data['user_id']; ?>&role=<?= $data['role']; ?>&jenis=<?= urlencode($data['jenis_surat']); ?>" class="btn-action btn-edit">✎ Edit Variabel</a>
+                <a href="admin_kirim_surat.php?id_permohonan=<?= (int)$id ?>&user_id=<?= (int)$data['user_id']; ?>&role=<?= urlencode((string)$data['role']); ?>&jenis=<?= urlencode((string)$data['jenis_surat']); ?>" class="btn-action btn-edit">✎ Edit Variabel</a>
                 <br><br>
                 <a href="javascript:history.back()" style="color: #95a5a6; font-size: 12px;">← Kembali</a>
             </div>

@@ -14,27 +14,55 @@ if ($stmt_u) {
     mysqli_stmt_bind_param($stmt_u, "i", $user_id);
     mysqli_stmt_execute($stmt_u);
     $res_u = mysqli_stmt_get_result($stmt_u);
-    if ($r = mysqli_fetch_assoc($res_u)) { $u_data = $r; }
+    if ($res_u && ($r = mysqli_fetch_assoc($res_u))) { $u_data = $r; }
 }
 
 if (isset($_POST['ajukan'])) {
-    $jenis_surat = $_POST['jenis_surat'];
-    $catatan = $_POST['catatan_user'];
-    $data_surat = isset($_POST['var']) ? json_encode($_POST['var']) : null;
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        die("Token keamanan tidak valid. Silakan muat ulang halaman.");
+    }
+    $jenis_surat = trim($_POST['jenis_surat'] ?? '');
+    $catatan = mb_substr(trim(strip_tags($_POST['catatan_user'] ?? '')), 0, 2000);
+
+    // Sanitasi variabel isian (hanya key aman; nilai dibatasi panjangnya)
+    $var_in = (isset($_POST['var']) && is_array($_POST['var'])) ? $_POST['var'] : [];
+    $var_clean = [];
+    foreach ($var_in as $vk => $vv) {
+        $vk = (string)$vk;
+        if (!preg_match('/^[A-Za-z0-9_\/]+$/', $vk) || is_array($vv)) { continue; }
+        $var_clean[$vk] = mb_substr(trim(strip_tags((string)$vv)), 0, 5000);
+    }
+    $data_surat = !empty($var_clean) ? json_encode($var_clean, JSON_UNESCAPED_UNICODE) : null;
+
+    // Validasi jenis surat terhadap master
+    $master_jenis = null;
+    $stmt_j = mysqli_prepare($koneksi, "SELECT require_berkas, info_berkas FROM master_surat_jenis WHERE nama_surat = ? LIMIT 1");
+    if ($stmt_j) {
+        mysqli_stmt_bind_param($stmt_j, "s", $jenis_surat);
+        mysqli_stmt_execute($stmt_j);
+        $res_j = mysqli_stmt_get_result($stmt_j);
+        if ($res_j) { $master_jenis = mysqli_fetch_assoc($res_j); }
+    }
 
     $berkas_baru = null;
     $upload_ok = true;
 
-    if (isset($_FILES['berkas']) && !empty($_FILES['berkas']['name'])) {
+    if (!$master_jenis) {
+        echo "<script>alert('Jenis surat tidak valid. Silakan pilih ulang.');</script>";
+        $upload_ok = false;
+    } elseif (!empty($master_jenis['require_berkas']) && empty($_FILES['berkas']['name'])) {
+        echo "<script>alert('Jenis surat ini mewajibkan berkas pendukung.');</script>";
+        $upload_ok = false;
+    } elseif (isset($_FILES['berkas']) && !empty($_FILES['berkas']['name'])) {
         $berkas = $_FILES['berkas']['name'];
         $tmp_name = $_FILES['berkas']['tmp_name'];
         $ekstensi = strtolower(pathinfo($berkas, PATHINFO_EXTENSION));
         $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
 
-        if ($_FILES['berkas']['error'] !== UPLOAD_ERR_OK) {
+        if ($_FILES['berkas']['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($tmp_name)) {
             echo "<script>alert('Gagal mengunggah berkas.');</script>";
             $upload_ok = false;
-        } elseif (!in_array($ekstensi, $allowed)) {
+        } elseif (!in_array($ekstensi, $allowed, true)) {
             echo "<script>alert('Format file tidak diizinkan! (Hanya PDF/JPG/PNG)');</script>";
             $upload_ok = false;
         } elseif ($_FILES['berkas']['size'] > 5 * 1024 * 1024) {
@@ -48,17 +76,18 @@ if (isset($_POST['ajukan'])) {
                 echo "<script>alert('Isi file tidak sesuai format yang diizinkan.');</script>";
                 $upload_ok = false;
             } else {
-            $berkas_baru = time() . "_" . bin2hex(random_bytes(4)) . "." . $ekstensi;
-            if (!is_dir('uploads')) mkdir('uploads', 0755, true);
-            if (!move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
-                echo "<script>alert('Gagal mengunggah berkas.');</script>";
-                $upload_ok = false;
-            }
+                $berkas_baru = time() . "_" . bin2hex(random_bytes(4)) . "." . $ekstensi;
+                if (!is_dir('uploads')) mkdir('uploads', 0755, true);
+                if (!move_uploaded_file($tmp_name, 'uploads/' . $berkas_baru)) {
+                    echo "<script>alert('Gagal mengunggah berkas.');</script>";
+                    $berkas_baru = null;
+                    $upload_ok = false;
+                }
             }
         }
     }
-    
-    if ($upload_ok) {
+
+    if ($upload_ok && $master_jenis) {
         $stmt = mysqli_prepare($koneksi, "INSERT INTO permohonan_surat (user_id, jenis_surat, catatan_user, berkas_pendukung, data_surat) VALUES (?, ?, ?, ?, ?)");
         if ($stmt) {
             mysqli_stmt_bind_param($stmt, "issss", $user_id, $jenis_surat, $catatan, $berkas_baru, $data_surat);
@@ -234,6 +263,7 @@ if ($master_surat_query) {
             <div class="card">
                 <h3><i class="fa-solid fa-file-pen" style="color:var(--primary)"></i> Formulir Baru</h3>
                 <form method="POST" action="" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                     <label>Filter Kategori</label>
                     <select id="filter_prodi" onchange="filterLetters()" required>
                         <option value="Dosen">Khusus Dosen</option>
@@ -244,12 +274,12 @@ if ($master_surat_query) {
                     <select name="jenis_surat" required id="jenis_surat" onchange="showFormFields()" disabled>
                         <option value="" disabled selected>-- Pilih Jenis Surat --</option>
                         <?php foreach($surat_options as $opt): ?>
-                            <option value="<?= htmlspecialchars($opt['nama_surat']) ?>" 
-                                    data-prodi="<?= htmlspecialchars($opt['prodi']) ?>" 
-                                    data-vars="<?= htmlspecialchars($opt['variabel_tambahan']) ?>"
-                                    data-require-berkas="<?= $opt['require_berkas'] ?>"
-                                    data-info-berkas="<?= htmlspecialchars($opt['info_berkas']) ?>">
-                                <?= htmlspecialchars($opt['nama_surat']) ?>
+                            <option value="<?= htmlspecialchars($opt['nama_surat'] ?? '', ENT_QUOTES, 'UTF-8') ?>" 
+                                    data-prodi="<?= htmlspecialchars($opt['prodi'] ?? '', ENT_QUOTES, 'UTF-8') ?>" 
+                                    data-vars="<?= htmlspecialchars($opt['variabel_tambahan'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                                    data-require-berkas="<?= (int)($opt['require_berkas'] ?? 0) ?>"
+                                    data-info-berkas="<?= htmlspecialchars($opt['info_berkas'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                <?= htmlspecialchars($opt['nama_surat'] ?? '', ENT_QUOTES, 'UTF-8') ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -272,7 +302,7 @@ if ($master_surat_query) {
                             <th>Status</th>
                             <th>Aksi</th>
                         </tr>
-                        <?php if(mysqli_num_rows($tampil) == 0): ?>
+                        <?php if(!$tampil || mysqli_num_rows($tampil) == 0): ?>
                             <tr><td colspan="4" style="text-align:center; padding:30px; color:#aaa;">Belum ada riwayat pengajuan.</td></tr>
                         <?php endif; ?>
                         <?php while($row = mysqli_fetch_assoc($tampil)) { ?>
@@ -291,7 +321,7 @@ if ($master_surat_query) {
                             </td>
                             <td>
                                 <?php if($row['status'] == 'Selesai' && !empty($row['surat_jadi'])) { ?>
-                                    <a href="cetak_surat.php?id=<?= $row['id']; ?>" target="_blank" class="btn-download"><i class="fa-solid fa-download"></i> Unduh</a>
+                                    <a href="cetak_surat.php?id=<?= (int)$row['id']; ?>" target="_blank" class="btn-download"><i class="fa-solid fa-download"></i> Unduh</a>
                                 <?php } else { echo "<small style='color:#ccc'>Verifikasi</small>"; } ?>
                             </td>
                         </tr>
@@ -303,6 +333,10 @@ if ($master_surat_query) {
     </div>
 
     <script>
+    function escHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
     function filterLetters() {
         const prodi = document.getElementById('filter_prodi').value;
         const jenisSelect = document.getElementById('jenis_surat');
@@ -337,16 +371,16 @@ if ($master_surat_query) {
         if(template === "") return;
 
         let fields = `
-            <label>Nama Lengkap</label><input type="text" name="var[nama]" value="<?= htmlspecialchars($u_data['nama_lengkap']) ?>" required>
-            <label>NIP / NIDN</label><input type="text" name="var[id_number]" value="<?= htmlspecialchars($u_data['nomor_induk']) ?>" required>
+            <label>Nama Lengkap</label><input type="text" name="var[nama]" value="<?= htmlspecialchars($u_data['nama_lengkap'], ENT_QUOTES, 'UTF-8') ?>" required>
+            <label>NIP / NIDN</label><input type="text" name="var[id_number]" value="<?= htmlspecialchars($u_data['nomor_induk'], ENT_QUOTES, 'UTF-8') ?>" required>
         `;
 
         if (extraVars.trim() !== "") {
             extraVars.split(',').forEach(v => {
-                let cleanVar = v.replace('${', '').replace('}', '').trim();
-                if (!['nama', 'nim', 'id_number', 'nama_lengkap'].includes(cleanVar)) {
+                let cleanVar = v.replace('${', '').replace('}', '').trim().replace(/[^A-Za-z0-9_\/]/g, '');
+                if (cleanVar !== '' && !['nama', 'nim', 'id_number', 'nama_lengkap'].includes(cleanVar)) {
                     let label = cleanVar.replace(/_/g, ' ').toUpperCase();
-                    fields += `<label>${label}</label><input type="text" name="var[${cleanVar}]" placeholder="Masukkan ${label}..." required>`;
+                    fields += `<label>${escHtml(label)}</label><input type="text" name="var[${cleanVar}]" placeholder="Masukkan ${escHtml(label)}..." required>`;
                 }
             });
         }
@@ -354,7 +388,7 @@ if ($master_surat_query) {
         const requireBerkas = selectedOption.getAttribute('data-require-berkas') === '1';
         if (requireBerkas) {
             const labelText = selectedOption.getAttribute('data-info-berkas') || 'Unggah Berkas Pendukung (PDF/Image)';
-            fields += `<label>${labelText}</label><input type="file" name="berkas" style="border:none; padding:10px 0;" required>`;
+            fields += `<label>${escHtml(labelText)}</label><input type="file" name="berkas" style="border:none; padding:10px 0;" required>`;
         }
 
         container.innerHTML = "<h4 style='margin-top:0; color:#6610f2;'>Lengkapi Data Surat</h4>" + fields;

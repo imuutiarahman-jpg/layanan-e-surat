@@ -7,7 +7,8 @@ if (!isset($_SESSION['login']) || $_SESSION['role'] != 'admin' || (($_SESSION['l
 
 // Fungsi pembantu untuk format waktu "time ago"
 function time_ago($timestamp) {
-    $time_ago = strtotime($timestamp);
+    $time_ago = strtotime((string)$timestamp);
+    if ($time_ago === false) { return '-'; }
     $current_time = time();
     $time_difference = $current_time - $time_ago;
     $seconds = $time_difference;
@@ -132,31 +133,31 @@ if (!$query) {
                         <td>
                             <?php if(!empty($row['variabel_tambahan']) || $row['require_berkas']): ?>
                                 <?php foreach(explode(',', $row['variabel_tambahan']) as $vt): ?>
-                                    <span class="badge bg-primary badge-variable"><?= trim($vt) ?></span>
+                                    <span class="badge bg-primary badge-variable"><?= htmlspecialchars(trim($vt), ENT_QUOTES, 'UTF-8') ?></span>
                                 <?php endforeach; ?>
                                 <?php if($row['require_berkas']): ?>
-                                    <span class="badge bg-warning text-dark badge-variable" title="<?= htmlspecialchars($row['info_berkas']) ?>"><i class="fa-solid fa-paperclip"></i> Berkas Wajib</span>
+                                    <span class="badge bg-warning text-dark badge-variable" title="<?= htmlspecialchars($row['info_berkas'] ?? '', ENT_QUOTES, 'UTF-8') ?>"><i class="fa-solid fa-paperclip"></i> Berkas Wajib</span>
                                 <?php endif; ?>
                             <?php else: ?>
                                 <small class="text-muted">-</small>
                             <?php endif; ?>
                         </td>
                         <td>
-                            <small class="d-block text-dark"><?= htmlspecialchars($row['updated_by']) ?></small>
+                            <small class="d-block text-dark"><?= htmlspecialchars($row['updated_by'] ?? '', ENT_QUOTES, 'UTF-8') ?></small>
                             <small class="text-muted"><?= time_ago($row['updated_at']) ?></small>
                         </td>
                         <td class="btn-stack">
                             <!-- PERBAIKAN: Mengarahkan link edit ke halaman edit dengan membawa parameter ID -->
                             <a href="edit_master_surat.php?id=<?= (int)$row['id'] ?>" class="btn btn-success">✎ Edit</a>
-                            <a href="templates/<?= htmlspecialchars(basename($row['file_template']), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-info text-white" download>⬇ Download DOCX</a>
+                            <a href="templates/<?= htmlspecialchars(rawurlencode(basename($row['file_template'])), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-info text-white" download>⬇ Download DOCX</a>
                             <button class="btn btn-warning text-dark" 
-                                    onclick="openUploadModal(<?= (int)$row['id'] ?>, '<?= htmlspecialchars($row['nama_surat'], ENT_QUOTES, 'UTF-8') ?>')">
+                                    onclick="openUploadModal(<?= (int)$row['id'] ?>, <?= htmlspecialchars(json_encode($row['nama_surat'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)">
                                 🔄 Ganti Template
                             </button>
                             <form action="proses_master_surat.php" method="POST" onsubmit="return confirm('Yakin ingin menghapus jenis surat ini?');" style="display:inline;">
                                 <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                                 <input type="hidden" name="action" value="hapus_jenis">
-                                <input type="hidden" name="id" value="<?= $row['id'] ?>">
+                                <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
                                 <button type="submit" class="btn btn-danger btn-sm mt-1" style="width: 100%; text-align: left;">🗑 Hapus Jenis</button>
                             </form>
                         </td>
@@ -192,7 +193,7 @@ if (!$query) {
                         <label class="form-label fw-bold">Kategori / Prodi</label>
                         <select name="prodi" class="form-select" required>
                             <?php foreach($full_list_prodi as $p): ?>
-                                <option value="<?= $p ?>" <?= ($view == 'dosen' && $p == 'Dosen') || ($prodi_active == $p) ? 'selected' : '' ?>><?= $p ?></option>
+                                <option value="<?= htmlspecialchars($p, ENT_QUOTES, 'UTF-8') ?>" <?= ($view == 'dosen' && $p == 'Dosen') || ($prodi_active == $p) ? 'selected' : '' ?>><?= htmlspecialchars($p, ENT_QUOTES, 'UTF-8') ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>

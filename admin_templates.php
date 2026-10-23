@@ -13,44 +13,51 @@ if (!is_dir($template_dir)) {
 // Ambil daftar template langsung dari database agar dinamis
 $managed_templates = [];
 $db_templates = mysqli_query($koneksi, "SELECT nama_surat as jenis, file_template as file FROM master_surat_jenis");
-while($row_t = mysqli_fetch_assoc($db_templates)) {
-    $managed_templates[] = $row_t;
+if ($db_templates) {
+    while ($row_t = mysqli_fetch_assoc($db_templates)) {
+        $managed_templates[] = $row_t;
+    }
 }
 
 // Proses Unggah Ganti Template (Langkah 3) — hardened tanpa ubah tampilan
 if (isset($_POST['upload_template'])) {
-    // File target harus cocok dengan daftar master di DB (cegah overwrite sembarang)
-    $req_file = basename($_POST['filename'] ?? '');
-    $valid = false;
-    $chk = mysqli_prepare($koneksi, "SELECT id FROM master_surat_jenis WHERE file_template = ? LIMIT 1");
-    if ($chk) {
-        mysqli_stmt_bind_param($chk, "s", $req_file);
-        mysqli_stmt_execute($chk);
-        $rchk = mysqli_stmt_get_result($chk);
-        if ($rchk && mysqli_fetch_assoc($rchk)) { $valid = true; }
-    }
-    if (!$valid) {
-        $error_msg = "Nama template tidak terdaftar.";
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        $error_msg = "Sesi kedaluwarsa. Muat ulang halaman lalu coba lagi.";
     } else {
-        $target_file = $template_dir . $req_file;
-        $file_type = strtolower(pathinfo($_FILES["template_docx"]["name"] ?? '', PATHINFO_EXTENSION));
-        $size_ok = (($_FILES["template_docx"]["size"] ?? 0) <= 10 * 1024 * 1024);
-        $err_ok = (($_FILES["template_docx"]["error"] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK);
-
-        if (!$err_ok) {
-            $error_msg = "File gagal diunggah.";
-        } elseif ($file_type != "docx" || !$size_ok) {
-            $error_msg = "Maaf, hanya file .docx maksimal 10MB yang diizinkan.";
+        // File target harus cocok dengan daftar master di DB (cegah overwrite sembarang)
+        $req_file = basename($_POST['filename'] ?? '');
+        $valid = false;
+        $chk = mysqli_prepare($koneksi, "SELECT id FROM master_surat_jenis WHERE file_template = ? LIMIT 1");
+        if ($chk) {
+            mysqli_stmt_bind_param($chk, "s", $req_file);
+            mysqli_stmt_execute($chk);
+            $rchk = mysqli_stmt_get_result($chk);
+            if ($rchk && mysqli_fetch_assoc($rchk)) { $valid = true; }
+        }
+        if (!$valid) {
+            $error_msg = "Nama template tidak terdaftar.";
         } else {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mime = $finfo ? finfo_file($finfo, $_FILES["template_docx"]["tmp_name"]) : '';
-            if ($finfo) finfo_close($finfo);
-            if (!in_array($mime, ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/octet-stream'], true)) {
-                $error_msg = "Isi file bukan dokumen Word yang valid.";
-            } elseif (move_uploaded_file($_FILES["template_docx"]["tmp_name"], $target_file)) {
-                $success_msg = "Template untuk '" . htmlspecialchars($_POST['jenis_surat'] ?? '', ENT_QUOTES, 'UTF-8') . "' berhasil diperbarui!";
+            $target_file = $template_dir . $req_file;
+            $tmp_file = $_FILES["template_docx"]["tmp_name"] ?? '';
+            $file_type = strtolower(pathinfo($_FILES["template_docx"]["name"] ?? '', PATHINFO_EXTENSION));
+            $size_ok = (($_FILES["template_docx"]["size"] ?? 0) <= 10 * 1024 * 1024);
+            $err_ok = (($_FILES["template_docx"]["error"] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK);
+
+            if (!$err_ok || !is_uploaded_file($tmp_file)) {
+                $error_msg = "File gagal diunggah.";
+            } elseif ($file_type != "docx" || !$size_ok) {
+                $error_msg = "Maaf, hanya file .docx maksimal 10MB yang diizinkan.";
             } else {
-                $error_msg = "Terjadi kesalahan saat mengunggah file.";
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime = $finfo ? finfo_file($finfo, $tmp_file) : '';
+                if ($finfo) finfo_close($finfo);
+                if (!in_array($mime, ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/octet-stream'], true)) {
+                    $error_msg = "Isi file bukan dokumen Word yang valid.";
+                } elseif (move_uploaded_file($tmp_file, $target_file)) {
+                    $success_msg = "Template untuk '" . htmlspecialchars($_POST['jenis_surat'] ?? '', ENT_QUOTES, 'UTF-8') . "' berhasil diperbarui!";
+                } else {
+                    $error_msg = "Terjadi kesalahan saat mengunggah file.";
+                }
             }
         }
     }
@@ -114,19 +121,20 @@ if (isset($_POST['upload_template'])) {
                 <tbody>
                     <?php foreach($managed_templates as $tmpl): ?>
                     <tr>
-                        <td><b><?= $tmpl['jenis'] ?></b></td>
-                        <td><code><?= $tmpl['file'] ?></code></td>
+                        <td><b><?= htmlspecialchars($tmpl['jenis'], ENT_QUOTES, 'UTF-8') ?></b></td>
+                        <td><code><?= htmlspecialchars($tmpl['file'], ENT_QUOTES, 'UTF-8') ?></code></td>
                         <td style="text-align: right;">
                             <!-- Langkah 1: Download -->
-                            <a href="<?= $template_dir . $tmpl['file'] ?>" class="btn btn-download" download>⬇ Lihat/Download</a>
+                            <a href="<?= htmlspecialchars($template_dir . rawurlencode($tmpl['file']), ENT_QUOTES, 'UTF-8') ?>" class="btn btn-download" download>⬇ Lihat/Download</a>
                             
                             <!-- Langkah 3: Munculkan Form Ganti -->
                             <button class="btn btn-upload" onclick="document.getElementById('form-<?= md5($tmpl['file']) ?>').style.display='block'">🔄 Ganti Template</button>
 
                             <div id="form-<?= md5($tmpl['file']) ?>" class="upload-form">
                                 <form method="POST" enctype="multipart/form-data">
-                                    <input type="hidden" name="filename" value="<?= $tmpl['file'] ?>">
-                                    <input type="hidden" name="jenis_surat" value="<?= $tmpl['jenis'] ?>">
+                                    <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="filename" value="<?= htmlspecialchars($tmpl['file'], ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="jenis_surat" value="<?= htmlspecialchars($tmpl['jenis'], ENT_QUOTES, 'UTF-8') ?>">
                                     <label style="display:block; margin-bottom:10px; font-weight:bold;">Pilih File Baru (.docx):</label>
                                     <input type="file" name="template_docx" accept=".docx" required style="margin-bottom:10px;">
                                     <br>
